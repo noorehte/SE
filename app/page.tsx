@@ -1,7 +1,7 @@
 import { getBrands } from "@/lib/metabase";
 import Dashboard from "@/components/Dashboard";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const brands = await getBrands();

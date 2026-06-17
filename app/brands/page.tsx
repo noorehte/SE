@@ -1,7 +1,7 @@
 import { getBrands } from "@/lib/metabase";
 import AllBrandsPage from "@/components/AllBrandsPage";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const brands = await getBrands();

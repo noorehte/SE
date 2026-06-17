@@ -15,7 +15,7 @@ async function metabaseQuery(tableId: number, fields?: number[], filters?: unkno
       "X-API-Key": METABASE_API_KEY,
     },
     body: JSON.stringify({ database: 67, type: "query", query }),
-    next: { revalidate: 300 }, // cache 5 min
+    cache: "no-store",
   });
 
   const data = await res.json();
