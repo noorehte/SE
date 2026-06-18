@@ -68,9 +68,9 @@ function computePipelineStatus(
 ): PipelineStatus {
   if (hasRecentWidgetViews) return "live";
   if (hasAnyWidgetViews) return "was_live";
-  if (brand.SUBMITTED_TO_MAB) return "code_snippets_available";
   if (brand.HAS_REJECTED_BY_BOARD) return "products_rejected";
   if (brand.HAS_PENDING_BOARD_REVIEW) return "pending_mab_review";
+  if (brand.SUBMITTED_TO_MAB) return "code_snippets_available";
   return "just_signed";
 }
 
