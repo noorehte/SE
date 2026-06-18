@@ -45,13 +45,18 @@ export interface Brand {
   BRAND_CREATED_AT: string;
   ANY_ADMIN_LAST_SIGNED_IN_AT: string | null;
   COLLABORATOR_CODE: string | null;
+  PAYMENT_COMPLETED_AT: string | null;
+  HAS_PENDING_BOARD_REVIEW: boolean;
+  HAS_REJECTED_BY_BOARD: boolean;
+  HAS_SHARE_THRESHOLD_MET: boolean;
   PIPELINE_STATUS: PipelineStatus;
   DAYS_IN_STATUS: number;
 }
 
 export type PipelineStatus =
-  | "waiting_on_brand_setup"
-  | "onboarding_tasks_complete"
+  | "just_signed"
+  | "pending_mab_review"
+  | "products_rejected"
   | "code_snippets_available"
   | "live"
   | "was_live";
@@ -63,13 +68,13 @@ function computePipelineStatus(
 ): PipelineStatus {
   if (hasRecentWidgetViews) return "live";
   if (hasAnyWidgetViews) return "was_live";
-  if (brand.SUBMITTED_TO_MAB) return "code_snippets_available";
-  if (brand.HAS_PAYMENT_METHOD && brand.PRODUCTS_COUNT > 0) return "onboarding_tasks_complete";
-  return "waiting_on_brand_setup";
+  if (brand.HAS_SHARE_THRESHOLD_MET) return "code_snippets_available";
+  if (brand.HAS_REJECTED_BY_BOARD) return "products_rejected";
+  if (brand.HAS_PENDING_BOARD_REVIEW) return "pending_mab_review";
+  return "just_signed";
 }
 
 export async function getBrands(): Promise<Brand[]> {
-  // FCT_BRAND_ONBOARDING fields
   const BRAND_FIELDS = [
     3382, // BRAND_ID
     3383, // BRAND_NAME
@@ -88,27 +93,27 @@ export async function getBrands(): Promise<Brand[]> {
     3407, // SUBMITTED_TO_MAB
   ];
 
-  // STG_BRANDS fields for hubspot_company_id and collaborator_code
   const BRAND_STG_FIELDS = [766, 764, 3282]; // ID, HUBSPOT_COMPANY_ID, COLLABORATOR_CODE
-
-  // FCT_DAILY_WIDGET_USAGE fields: BRAND_ID, DAY, VIEWS
-  const WIDGET_FIELDS = [3552, 3551, 3555]; // BRAND_ID, DAY, VIEWS
+  const WIDGET_FIELDS = [3552, 3551, 3555];  // BRAND_ID, DAY, VIEWS
+  const PRODUCT_FIELDS = [738, 731, 729];    // HEALTH_BRAND_ID, STATUS, DATE_PASSED_PROVIDER_THRESHOLD
+  const ONBOARDING_FIELDS = [3626, 3640];    // HEALTH_BRAND_ID, PAYMENT_COMPLETED_AT — use STG table IDs
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const [onboardingRows, stgBrandRows, widgetRows] = await Promise.all([
+  const [onboardingRows, stgBrandRows, widgetRows, productRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203, BRAND_STG_FIELDS),
     metabaseQuery(464, WIDGET_FIELDS),
+    metabaseQuery(202, PRODUCT_FIELDS), // STG_PRODUCTS
   ]);
 
-  // Build lookup maps
+  // HubSpot + collaborator code lookup
   const hubspotMap = new Map<number, { HUBSPOT_COMPANY_ID: number | null; COLLABORATOR_CODE: string | null }>();
   for (const r of stgBrandRows) {
     hubspotMap.set(r.ID, { HUBSPOT_COMPANY_ID: r.HUBSPOT_COMPANY_ID, COLLABORATOR_CODE: r.COLLABORATOR_CODE });
   }
 
-  // Widget activity per brand: recent (last 30d) and any historical
+  // Widget activity
   const recentWidgetBrands = new Set<number>();
   const anyWidgetBrands = new Set<number>();
   for (const r of widgetRows) {
@@ -118,12 +123,29 @@ export async function getBrands(): Promise<Brand[]> {
     }
   }
 
+  // Product status per brand
+  const pendingBoardReview = new Set<number>();
+  const rejectedByBoard = new Set<number>();
+  const shareThresholdMet = new Set<number>();
+  for (const r of productRows) {
+    if (r.STATUS === "pending_board_review") pendingBoardReview.add(r.HEALTH_BRAND_ID);
+    if (r.STATUS === "rejected_by_board") rejectedByBoard.add(r.HEALTH_BRAND_ID);
+    if (r.DATE_PASSED_PROVIDER_THRESHOLD) shareThresholdMet.add(r.HEALTH_BRAND_ID);
+  }
+
   const now = Date.now();
   const overrides = getAllOverrides();
 
-  return onboardingRows.map((r: Omit<Brand, "PIPELINE_STATUS" | "DAYS_IN_STATUS" | "HUBSPOT_COMPANY_ID" | "COLLABORATOR_CODE" | "SUBSCRIPTION_STATUS">) => {
+  return onboardingRows.map((r: Omit<Brand, "PIPELINE_STATUS" | "DAYS_IN_STATUS" | "HUBSPOT_COMPANY_ID" | "COLLABORATOR_CODE" | "PAYMENT_COMPLETED_AT" | "HAS_PENDING_BOARD_REVIEW" | "HAS_REJECTED_BY_BOARD" | "HAS_SHARE_THRESHOLD_MET">) => {
     const extra = hubspotMap.get(r.BRAND_ID) ?? { HUBSPOT_COMPANY_ID: null, COLLABORATOR_CODE: null };
-    const brandWithExtra = { ...r, ...extra, SUBSCRIPTION_STATUS: null };
+    const brandWithExtra = {
+      ...r,
+      ...extra,
+      PAYMENT_COMPLETED_AT: null,
+      HAS_PENDING_BOARD_REVIEW: pendingBoardReview.has(r.BRAND_ID),
+      HAS_REJECTED_BY_BOARD: rejectedByBoard.has(r.BRAND_ID),
+      HAS_SHARE_THRESHOLD_MET: shareThresholdMet.has(r.BRAND_ID),
+    };
     const computedStatus = computePipelineStatus(
       brandWithExtra,
       recentWidgetBrands.has(r.BRAND_ID),

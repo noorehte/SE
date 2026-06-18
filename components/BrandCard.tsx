@@ -4,8 +4,9 @@ import { Brand, PipelineStatus } from "@/lib/metabase";
 import { ExternalLink } from "lucide-react";
 
 const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
-  waiting_on_brand_setup: "Complete onboarding tasks",
-  onboarding_tasks_complete: "Awaiting code snippet threshold",
+  just_signed: "Awaiting MAB product review",
+  pending_mab_review: "Products pending board review",
+  products_rejected: "Products rejected by board",
   code_snippets_available: "Awaiting go-live",
   live: null,
   was_live: "Re-activation needed",

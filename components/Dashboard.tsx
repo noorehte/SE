@@ -7,11 +7,12 @@ import { LayoutGrid, List, RefreshCw } from "lucide-react";
 import Sidebar from "./Sidebar";
 
 export const COLUMNS: { id: PipelineStatus; label: string; accent: string }[] = [
-  { id: "waiting_on_brand_setup",    label: "Waiting on Brand Setup",      accent: "#e9a84c" },
-  { id: "onboarding_tasks_complete", label: "All Tasks Complete",          accent: "#72a4bf" },
-  { id: "code_snippets_available",   label: "Code Snippets Available",     accent: "#8b7fe8" },
-  { id: "live",                      label: "Live",                        accent: "#4caf82" },
-  { id: "was_live",                  label: "Was Live — Needs Help",       accent: "#e05c5c" },
+  { id: "just_signed",            label: "Just Signed",                  accent: "#72a4bf" },
+  { id: "pending_mab_review",     label: "Products Being Reviewed",      accent: "#e9a84c" },
+  { id: "products_rejected",      label: "Products Rejected",            accent: "#e05c5c" },
+  { id: "code_snippets_available", label: "Code Snippets Available",     accent: "#8b7fe8" },
+  { id: "live",                   label: "Live",                         accent: "#4caf82" },
+  { id: "was_live",               label: "Was Live — Needs Help",        accent: "#e05c5c" },
 ];
 
 const SE_OWNERS = ["maha", "noor", "naumaan"];
