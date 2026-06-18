@@ -93,10 +93,9 @@ export async function getBrands(): Promise<Brand[]> {
     3407, // SUBMITTED_TO_MAB
   ];
 
-  const BRAND_STG_FIELDS = [766, 764, 3282]; // ID, HUBSPOT_COMPANY_ID, COLLABORATOR_CODE
+  const BRAND_STG_FIELDS = [766, 769, 764, 3282, 3279, 3280, 3281, 767]; // ID, NAME, HUBSPOT_COMPANY_ID, COLLABORATOR_CODE, SE_OWNER, OPS_OWNER, ACCOUNT_MANAGER, CREATED_AT
   const WIDGET_FIELDS = [3552, 3551, 3555];  // BRAND_ID, DAY, VIEWS
   const PRODUCT_FIELDS = [738, 731, 729];    // HEALTH_BRAND_ID, STATUS, DATE_PASSED_PROVIDER_THRESHOLD
-  const ONBOARDING_FIELDS = [3626, 3640];    // HEALTH_BRAND_ID, PAYMENT_COMPLETED_AT — use STG table IDs
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
@@ -104,13 +103,29 @@ export async function getBrands(): Promise<Brand[]> {
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203, BRAND_STG_FIELDS),
     metabaseQuery(464, WIDGET_FIELDS),
-    metabaseQuery(202, PRODUCT_FIELDS), // STG_PRODUCTS
+    metabaseQuery(202, PRODUCT_FIELDS),
   ]);
 
-  // HubSpot + collaborator code lookup
-  const hubspotMap = new Map<number, { HUBSPOT_COMPANY_ID: number | null; COLLABORATOR_CODE: string | null }>();
+  // Full STG brand lookup (name, hubspot, owners, created_at)
+  const stgMap = new Map<number, {
+    NAME: string;
+    HUBSPOT_COMPANY_ID: number | null;
+    COLLABORATOR_CODE: string | null;
+    SE_OWNER: string | null;
+    OPS_OWNER: string | null;
+    ACCOUNT_MANAGER: string | null;
+    CREATED_AT: string;
+  }>();
   for (const r of stgBrandRows) {
-    hubspotMap.set(r.ID, { HUBSPOT_COMPANY_ID: r.HUBSPOT_COMPANY_ID, COLLABORATOR_CODE: r.COLLABORATOR_CODE });
+    stgMap.set(r.ID, {
+      NAME: r.NAME,
+      HUBSPOT_COMPANY_ID: r.HUBSPOT_COMPANY_ID,
+      COLLABORATOR_CODE: r.COLLABORATOR_CODE,
+      SE_OWNER: r.SE_OWNER,
+      OPS_OWNER: r.OPS_OWNER,
+      ACCOUNT_MANAGER: r.ACCOUNT_MANAGER,
+      CREATED_AT: r.CREATED_AT,
+    });
   }
 
   // Widget activity
@@ -135,30 +150,95 @@ export async function getBrands(): Promise<Brand[]> {
 
   const now = Date.now();
   const overrides = getAllOverrides();
+  const onboardingIds = new Set(onboardingRows.map((r: { BRAND_ID: number }) => r.BRAND_ID));
 
-  return onboardingRows.map((r: Omit<Brand, "PIPELINE_STATUS" | "DAYS_IN_STATUS" | "HUBSPOT_COMPANY_ID" | "COLLABORATOR_CODE" | "PAYMENT_COMPLETED_AT" | "HAS_PENDING_BOARD_REVIEW" | "HAS_REJECTED_BY_BOARD" | "HAS_SHARE_THRESHOLD_MET">) => {
-    const extra = hubspotMap.get(r.BRAND_ID) ?? { HUBSPOT_COMPANY_ID: null, COLLABORATOR_CODE: null };
+  function buildBrand(
+    brandId: number,
+    base: {
+      BRAND_NAME: string;
+      SE_OWNER: string | null;
+      OPS_OWNER: string | null;
+      ACCOUNT_MANAGER: string | null;
+      BD_REP: string | null;
+      BRAND_CREATED_AT: string;
+      ANY_ADMIN_LAST_SIGNED_IN_AT: string | null;
+      PRODUCTS_COUNT: number;
+      REVIEWS_REQUESTED: number;
+      HAS_REVIEWS_READY: boolean;
+      CA_REQUESTED: number;
+      HAS_CA_READY: boolean;
+      HAS_PAYMENT_METHOD: boolean;
+      SUBMITTED_TO_MAB: boolean;
+    }
+  ): Brand {
+    const stg = stgMap.get(brandId);
     const brandWithExtra = {
-      ...r,
-      ...extra,
+      BRAND_ID: brandId,
+      ...base,
+      HUBSPOT_COMPANY_ID: stg?.HUBSPOT_COMPANY_ID ?? null,
+      COLLABORATOR_CODE: stg?.COLLABORATOR_CODE ?? null,
       PAYMENT_COMPLETED_AT: null,
-      HAS_PENDING_BOARD_REVIEW: pendingBoardReview.has(r.BRAND_ID),
-      HAS_REJECTED_BY_BOARD: rejectedByBoard.has(r.BRAND_ID),
-      HAS_SHARE_THRESHOLD_MET: shareThresholdMet.has(r.BRAND_ID),
+      HAS_PENDING_BOARD_REVIEW: pendingBoardReview.has(brandId),
+      HAS_REJECTED_BY_BOARD: rejectedByBoard.has(brandId),
+      HAS_SHARE_THRESHOLD_MET: shareThresholdMet.has(brandId),
     };
     const computedStatus = computePipelineStatus(
       brandWithExtra,
-      recentWidgetBrands.has(r.BRAND_ID),
-      anyWidgetBrands.has(r.BRAND_ID)
+      recentWidgetBrands.has(brandId),
+      anyWidgetBrands.has(brandId)
     );
-    const pipelineStatus = overrides[String(r.BRAND_ID)] ?? computedStatus;
-    const createdAt = new Date(r.BRAND_CREATED_AT).getTime();
+    const pipelineStatus = overrides[String(brandId)] ?? computedStatus;
+    const createdAt = new Date(base.BRAND_CREATED_AT).getTime();
     const daysInStatus = Math.floor((now - createdAt) / (1000 * 60 * 60 * 24));
+    return { ...brandWithExtra, PIPELINE_STATUS: pipelineStatus, DAYS_IN_STATUS: daysInStatus };
+  }
 
-    return {
-      ...brandWithExtra,
-      PIPELINE_STATUS: pipelineStatus,
-      DAYS_IN_STATUS: daysInStatus,
-    };
-  });
+  // Brands from FCT_BRAND_ONBOARDING
+  const result: Brand[] = onboardingRows.map((r: {
+    BRAND_ID: number; BRAND_NAME: string; SE_OWNER: string | null; OPS_OWNER: string | null;
+    ACCOUNT_MANAGER: string | null; BD_REP: string | null; BRAND_CREATED_AT: string;
+    ANY_ADMIN_LAST_SIGNED_IN_AT: string | null; PRODUCTS_COUNT: number; REVIEWS_REQUESTED: number;
+    HAS_REVIEWS_READY: boolean; CA_REQUESTED: number; HAS_CA_READY: boolean;
+    HAS_PAYMENT_METHOD: boolean; SUBMITTED_TO_MAB: boolean;
+  }) => buildBrand(r.BRAND_ID, {
+    BRAND_NAME: r.BRAND_NAME,
+    SE_OWNER: r.SE_OWNER,
+    OPS_OWNER: r.OPS_OWNER,
+    ACCOUNT_MANAGER: r.ACCOUNT_MANAGER,
+    BD_REP: r.BD_REP,
+    BRAND_CREATED_AT: r.BRAND_CREATED_AT,
+    ANY_ADMIN_LAST_SIGNED_IN_AT: r.ANY_ADMIN_LAST_SIGNED_IN_AT,
+    PRODUCTS_COUNT: r.PRODUCTS_COUNT,
+    REVIEWS_REQUESTED: r.REVIEWS_REQUESTED,
+    HAS_REVIEWS_READY: r.HAS_REVIEWS_READY,
+    CA_REQUESTED: r.CA_REQUESTED,
+    HAS_CA_READY: r.HAS_CA_READY,
+    HAS_PAYMENT_METHOD: r.HAS_PAYMENT_METHOD,
+    SUBMITTED_TO_MAB: r.SUBMITTED_TO_MAB,
+  }));
+
+  // Add rejected brands not in FCT_BRAND_ONBOARDING
+  for (const brandId of rejectedByBoard) {
+    if (onboardingIds.has(brandId)) continue;
+    const stg = stgMap.get(brandId);
+    if (!stg) continue;
+    result.push(buildBrand(brandId, {
+      BRAND_NAME: stg.NAME,
+      SE_OWNER: stg.SE_OWNER,
+      OPS_OWNER: stg.OPS_OWNER,
+      ACCOUNT_MANAGER: stg.ACCOUNT_MANAGER,
+      BD_REP: null,
+      BRAND_CREATED_AT: stg.CREATED_AT,
+      ANY_ADMIN_LAST_SIGNED_IN_AT: null,
+      PRODUCTS_COUNT: 0,
+      REVIEWS_REQUESTED: 0,
+      HAS_REVIEWS_READY: false,
+      CA_REQUESTED: 0,
+      HAS_CA_READY: false,
+      HAS_PAYMENT_METHOD: false,
+      SUBMITTED_TO_MAB: false,
+    }));
+  }
+
+  return result;
 }

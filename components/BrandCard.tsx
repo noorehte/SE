@@ -31,7 +31,7 @@ export default function BrandCard({ brand, accent }: { brand: Brand; accent: str
   const adminUrl = `https://frontrowmd.com/admin/health_brands/${brand.BRAND_ID}`;
 
   return (
-    <div className="rounded-xl p-4" style={{
+    <div className="rounded-xl p-4 transition-all hover:scale-[1.01]" style={{
       background: "rgba(255,255,255,0.06)",
       border: `1px solid ${isStuck ? "#e05c5c55" : "rgba(255,255,255,0.1)"}`,
       borderLeft: `3px solid ${isStuck ? "#e05c5c" : accent}`,

@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { Brand, PipelineStatus } from "@/lib/metabase";
 import BrandCard from "./BrandCard";
+import BrandDetailPanel from "./BrandDetailPanel";
 import { LayoutGrid, List, RefreshCw } from "lucide-react";
 import Sidebar from "./Sidebar";
 
@@ -21,11 +22,21 @@ export default function Dashboard({ initialBrands }: { initialBrands: Brand[] })
   const [brands, setBrands] = useState(initialBrands);
   const [view, setView] = useState<"kanban" | "table">("kanban");
   const [seFilter, setSeFilter] = useState<string>("all");
+  const [columnFilter, setColumnFilter] = useState<PipelineStatus | null>(null);
+  const [statFilter, setStatFilter] = useState<"all" | "in_progress" | "stuck" | "live">("all");
+  const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const filtered = seFilter === "all" ? brands : brands.filter((b) => b.SE_OWNER === seFilter);
-  const stuck = filtered.filter((b) => b.DAYS_IN_STATUS > 7).length;
-  const live = filtered.filter((b) => b.PIPELINE_STATUS === "live").length;
+  const seFiltered = seFilter === "all" ? brands : brands.filter((b) => b.SE_OWNER === seFilter);
+
+  const filtered = statFilter === "all" ? seFiltered
+    : statFilter === "in_progress" ? seFiltered.filter(b => !["live", "was_live"].includes(b.PIPELINE_STATUS))
+    : statFilter === "stuck" ? seFiltered.filter(b => b.DAYS_IN_STATUS > 7)
+    : seFiltered.filter(b => b.PIPELINE_STATUS === "live");
+
+  const visibleBrands = columnFilter ? filtered.filter((b) => b.PIPELINE_STATUS === columnFilter) : filtered;
+  const stuck = seFiltered.filter((b) => b.DAYS_IN_STATUS > 7).length;
+  const live = seFiltered.filter((b) => b.PIPELINE_STATUS === "live").length;
 
   async function refresh() {
     setLoading(true);
@@ -49,6 +60,10 @@ export default function Dashboard({ initialBrands }: { initialBrands: Brand[] })
     });
   }
 
+  function toggleColumnFilter(id: PipelineStatus) {
+    setColumnFilter((prev) => (prev === id ? null : id));
+  }
+
   return (
     <div className="flex min-h-screen" style={{ background: "#0d1b26", color: "#fff" }}>
       <Sidebar active="pipeline" />
@@ -62,6 +77,13 @@ export default function Dashboard({ initialBrands }: { initialBrands: Brand[] })
             <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>Brand portal checklist → automated status movement</p>
           </div>
           <div className="flex items-center gap-3 mt-1">
+            {(columnFilter || statFilter !== "all") && (
+              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); }}
+                className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+                style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
+                ✕ Clear filter
+              </button>
+            )}
             <select
               value={seFilter}
               onChange={(e) => setSeFilter(e.target.value)}
@@ -90,25 +112,40 @@ export default function Dashboard({ initialBrands }: { initialBrands: Brand[] })
 
         {/* Stat cards */}
         <div className="grid grid-cols-4 gap-4 px-8 py-5 flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-          {[
-            { label: "Total brands", value: filtered.length, color: "#fff" },
-            { label: "In progress", value: filtered.filter(b => !["live","was_live"].includes(b.PIPELINE_STATUS)).length, color: "#72a4bf" },
-            { label: "Stuck >7d", value: stuck, color: "#e05c5c" },
-            { label: "Live", value: live, color: "#4caf82" },
-          ].map((stat) => (
-            <div key={stat.label} className="rounded-xl px-5 py-4" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-              <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.4)", marginBottom: "6px" }}>{stat.label}</div>
-              <div style={{ fontSize: "2rem", fontWeight: 700, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
-            </div>
-          ))}
+          {([
+            { label: "Total brands", key: "all" as const, value: seFiltered.length, color: "#fff" },
+            { label: "In progress", key: "in_progress" as const, value: seFiltered.filter(b => !["live","was_live"].includes(b.PIPELINE_STATUS)).length, color: "#72a4bf" },
+            { label: "Stuck >7d", key: "stuck" as const, value: seFiltered.filter(b => b.DAYS_IN_STATUS > 7).length, color: "#e05c5c" },
+            { label: "Live", key: "live" as const, value: seFiltered.filter(b => b.PIPELINE_STATUS === "live").length, color: "#4caf82" },
+          ]).map((stat) => {
+            const isActive = statFilter === stat.key;
+            return (
+              <button key={stat.label} onClick={() => { setStatFilter(stat.key); setColumnFilter(null); }}
+                className="rounded-xl px-5 py-4 text-left transition-all hover:opacity-90"
+                style={{
+                  background: isActive ? stat.color + "18" : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${isActive ? stat.color + "55" : "rgba(255,255,255,0.08)"}`,
+                  cursor: "pointer",
+                }}>
+                <div style={{ fontSize: "0.8rem", color: isActive ? stat.color : "rgba(255,255,255,0.4)", marginBottom: "6px" }}>{stat.label}</div>
+                <div style={{ fontSize: "2rem", fontWeight: 700, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
+              </button>
+            );
+          })}
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-8">
           {view === "kanban" ? (
-            <KanbanView brands={filtered} onMove={moveBrand} />
+            <KanbanView
+              brands={filtered}
+              columnFilter={columnFilter}
+              onMove={moveBrand}
+              onCardClick={setSelectedBrand}
+              onHeaderClick={toggleColumnFilter}
+            />
           ) : (
-            <TableView brands={filtered} onMove={moveBrand} />
+            <TableView brands={visibleBrands} onMove={moveBrand} onRowClick={setSelectedBrand} />
           )}
         </div>
 
@@ -128,22 +165,43 @@ export default function Dashboard({ initialBrands }: { initialBrands: Brand[] })
           <span className="ml-auto" style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.25)" }}>Last updated just now</span>
         </div>
       </div>
+
+      {/* Brand detail panel */}
+      {selectedBrand && (
+        <BrandDetailPanel brand={selectedBrand} onClose={() => setSelectedBrand(null)} />
+      )}
     </div>
   );
 }
 
-function KanbanView({ brands, onMove }: { brands: Brand[]; onMove: (brandId: number, status: PipelineStatus) => void }) {
+function KanbanView({
+  brands,
+  columnFilter,
+  onMove,
+  onCardClick,
+  onHeaderClick,
+}: {
+  brands: Brand[];
+  columnFilter: PipelineStatus | null;
+  onMove: (brandId: number, status: PipelineStatus) => void;
+  onCardClick: (brand: Brand) => void;
+  onHeaderClick: (id: PipelineStatus) => void;
+}) {
   const dragBrandId = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<PipelineStatus | null>(null);
 
+  const visibleColumns = columnFilter ? COLUMNS.filter((c) => c.id === columnFilter) : COLUMNS;
+
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
-      {COLUMNS.map((col) => {
+      {visibleColumns.map((col) => {
         const colBrands = brands.filter((b) => b.PIPELINE_STATUS === col.id);
+        const totalCount = brands.filter((b) => b.PIPELINE_STATUS === col.id).length;
         const isOver = dragOver === col.id;
+        const isFiltered = columnFilter === col.id;
 
         return (
-          <div key={col.id} className="flex-shrink-0" style={{ width: "220px" }}
+          <div key={col.id} className="flex-shrink-0" style={{ width: columnFilter ? "100%" : "220px", maxWidth: columnFilter ? "560px" : "220px" }}
             onDragOver={(e) => { e.preventDefault(); setDragOver(col.id); }}
             onDragLeave={() => setDragOver(null)}
             onDrop={(e) => {
@@ -158,12 +216,29 @@ function KanbanView({ brands, onMove }: { brands: Brand[]; onMove: (brandId: num
             <div className="flex items-center gap-2 mb-3">
               <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: col.accent }} />
               <span style={{ fontSize: "1.05rem", fontWeight: 700, color: "#fff" }}>{col.label}</span>
-              <span className="ml-auto px-2 py-0.5 rounded-full" style={{ fontSize: "0.8rem", background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.5)" }}>{colBrands.length}</span>
+              <button
+                onClick={() => onHeaderClick(col.id)}
+                className="ml-auto px-2 py-0.5 rounded-full transition-colors"
+                title={isFiltered ? "Show all columns" : "Filter to this column"}
+                style={{
+                  fontSize: "0.8rem",
+                  background: isFiltered ? col.accent + "33" : "rgba(255,255,255,0.08)",
+                  color: isFiltered ? col.accent : "rgba(255,255,255,0.5)",
+                  border: isFiltered ? `1px solid ${col.accent}55` : "1px solid transparent",
+                  cursor: "pointer",
+                }}>
+                {totalCount}
+              </button>
             </div>
             <div className="flex flex-col gap-3 min-h-20 rounded-xl p-2 transition-all"
               style={{ background: isOver ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.02)", border: `1px solid ${isOver ? col.accent + "66" : "rgba(255,255,255,0.06)"}` }}>
               {colBrands.map((brand) => (
-                <div key={brand.BRAND_ID} draggable onDragStart={() => { dragBrandId.current = brand.BRAND_ID; }} className="cursor-grab active:cursor-grabbing">
+                <div key={brand.BRAND_ID}
+                  draggable
+                  onDragStart={() => { dragBrandId.current = brand.BRAND_ID; }}
+                  onClick={() => onCardClick(brand)}
+                  className="cursor-pointer active:cursor-grabbing"
+                  style={{ cursor: "grab" }}>
                   <BrandCard brand={brand} accent={col.accent} />
                 </div>
               ))}
@@ -178,7 +253,15 @@ function KanbanView({ brands, onMove }: { brands: Brand[]; onMove: (brandId: num
   );
 }
 
-function TableView({ brands, onMove }: { brands: Brand[]; onMove: (brandId: number, status: PipelineStatus) => void }) {
+function TableView({
+  brands,
+  onMove,
+  onRowClick,
+}: {
+  brands: Brand[];
+  onMove: (brandId: number, status: PipelineStatus) => void;
+  onRowClick: (brand: Brand) => void;
+}) {
   const [sortKey, setSortKey] = useState<keyof Brand>("BRAND_NAME");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -214,11 +297,12 @@ function TableView({ brands, onMove }: { brands: Brand[]; onMove: (brandId: numb
             const isStuck = brand.DAYS_IN_STATUS > 7;
             const col = COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
             return (
-              <tr key={brand.BRAND_ID} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
+              <tr key={brand.BRAND_ID} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer" }}
+                onClick={() => onRowClick(brand)}
                 onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
                 <td className="px-4 py-3" style={{ color: "#fff", borderLeft: `3px solid ${isStuck ? "#e05c5c" : (col?.accent ?? "transparent")}`, fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "0.9rem", fontWeight: 600 }}>{brand.BRAND_NAME}</td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <select value={brand.PIPELINE_STATUS} onChange={(e) => onMove(brand.BRAND_ID, e.target.value as PipelineStatus)}
                     className="rounded-full border-0 cursor-pointer px-2 py-0.5"
                     style={{ background: (col?.accent ?? "#333") + "22", color: col?.accent ?? "#fff", fontSize: "0.8rem" }}>
@@ -229,7 +313,7 @@ function TableView({ brands, onMove }: { brands: Brand[]; onMove: (brandId: numb
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ACCOUNT_MANAGER ?? "—"}</td>
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.OPS_OWNER ?? "—"}</td>
                 <td className="px-4 py-3 font-semibold" style={{ color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.4)", fontSize: "0.875rem" }}>{brand.DAYS_IN_STATUS}d</td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <div className="flex gap-3">
                     {hubspotUrl && <a href={hubspotUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#f97316", fontSize: "0.8rem" }} className="hover:opacity-70">HS</a>}
                     <a href={adminUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#72a4bf", fontSize: "0.8rem" }} className="hover:opacity-70">Admin</a>
