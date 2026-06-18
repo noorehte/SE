@@ -68,7 +68,7 @@ function computePipelineStatus(
 ): PipelineStatus {
   if (hasRecentWidgetViews) return "live";
   if (hasAnyWidgetViews) return "was_live";
-  if (brand.HAS_SHARE_THRESHOLD_MET) return "code_snippets_available";
+  if (brand.SUBMITTED_TO_MAB) return "code_snippets_available";
   if (brand.HAS_REJECTED_BY_BOARD) return "products_rejected";
   if (brand.HAS_PENDING_BOARD_REVIEW) return "pending_mab_review";
   return "just_signed";
