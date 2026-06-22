@@ -30,11 +30,19 @@ export async function scheduleCall(
       redirect: "follow",
     });
 
-    if (!res.ok) {
-      return { success: false, error: `Script returned HTTP ${res.status}` };
+    const text = await res.text();
+
+    if (!text) {
+      return { success: false, error: `Empty response from script (HTTP ${res.status})` };
     }
 
-    const json = await res.json();
+    let json: { success: boolean; start?: string; error?: string };
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return { success: false, error: `Non-JSON response: ${text.slice(0, 300)}` };
+    }
+
     if (!json.success) {
       return { success: false, error: json.error ?? "Script returned success: false" };
     }

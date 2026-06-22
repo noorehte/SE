@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-const FILE = path.join(process.cwd(), "data", "scheduled-calls.json");
+const FILE = "/tmp/scheduled-calls.json";
 
 interface ScheduledCall {
   brandId: number;
@@ -20,7 +20,6 @@ function read(): Record<string, ScheduledCall> {
 }
 
 function write(data: Record<string, ScheduledCall>): void {
-  fs.mkdirSync(path.dirname(FILE), { recursive: true });
   fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
