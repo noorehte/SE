@@ -11,16 +11,26 @@
  * 5. Copy the deployment URL
  * 6. Add it to Vercel env vars as: WEBINAR_SHEET_SCRIPT_URL
  *
- * Accepts POST with JSON body: { brandName, seName, segment }
+ * Accepts GET with query params: ?brandName=...&seName=...&segment=...
  * Appends a row to "Brands We Need to Schedule" sheet.
  */
 
 var SHEET_NAME = "Brands We Need to Schedule";
 
+function doGet(e) {
+  return handleRequest(e.parameter || {});
+}
+
 function doPost(e) {
   try {
-    var params = JSON.parse(e.postData.contents);
+    return handleRequest(JSON.parse(e.postData.contents));
+  } catch (err) {
+    return jsonResponse({ success: false, error: err.message });
+  }
+}
 
+function handleRequest(params) {
+  try {
     var brandName = params.brandName || "";
     var seName = params.seName || "";
     var segment = params.segment || "";
@@ -54,10 +64,6 @@ function doPost(e) {
   } catch (err) {
     return jsonResponse({ success: false, error: err.toString() });
   }
-}
-
-function doGet() {
-  return jsonResponse({ success: false, error: "GET not supported" });
 }
 
 function jsonResponse(obj) {

@@ -15,21 +15,19 @@ export async function addToWebinarSheet(
   }
 
   try {
-    const initial = await fetch(SCRIPT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brandName, seName, segment: segment ?? "Unknown" }),
-      redirect: "manual",
+    const params = new URLSearchParams({
+      brandName,
+      seName,
+      segment: segment ?? "Unknown",
     });
 
-    const redirectUrl = initial.headers.get("location");
-    if (!redirectUrl) {
-      return { success: false, error: "No redirect from script — check deployment" };
-    }
+    const res = await fetch(`${SCRIPT_URL}?${params}`, {
+      method: "GET",
+      redirect: "follow",
+    });
 
-    const res = await fetch(redirectUrl);
     if (!res.ok) {
-      return { success: false, error: `Script echo returned HTTP ${res.status}` };
+      return { success: false, error: `Script returned HTTP ${res.status}` };
     }
 
     const json = await res.json();
