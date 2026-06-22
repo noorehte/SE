@@ -21,27 +21,17 @@ export async function scheduleCall(
   }
 
   try {
-    // GAS web apps redirect on POST — follow manually to avoid
-    // the redirect being converted to a GET (which hits doGet).
-    const initial = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        eventTitle: `Brand Call: ${brandName}`,
-        emails: [],
-      }),
-      redirect: "manual",
+    const params = new URLSearchParams({
+      eventTitle: `Brand Call: ${brandName}`,
     });
 
-    // Follow the redirect with GET to retrieve the response content
-    const redirectUrl = initial.headers.get("location");
-    if (!redirectUrl) {
-      return { success: false, error: "No redirect from script — check deployment" };
-    }
+    const res = await fetch(`${url}?${params}`, {
+      method: "GET",
+      redirect: "follow",
+    });
 
-    const res = await fetch(redirectUrl);
     if (!res.ok) {
-      return { success: false, error: `Script echo returned HTTP ${res.status}` };
+      return { success: false, error: `Script returned HTTP ${res.status}` };
     }
 
     const json = await res.json();

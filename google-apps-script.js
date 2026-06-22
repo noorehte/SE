@@ -219,22 +219,25 @@ function findSlot(eventTitle, durationMinutes, startDate, endDate, calendarIds, 
   throw new Error("No available time slot found");
 }
 
-function doGet() {
-  return ContentService.createTextOutput(JSON.stringify({
-    success: false,
-    error: "GET not supported"
-  })).setMimeType(ContentService.MimeType.JSON);
+function doGet(e) {
+  return handleRequest(e.parameter || {});
 }
 
 function doPost(e) {
   try {
-    var params = JSON.parse(e.postData.contents);
+    return handleRequest(JSON.parse(e.postData.contents));
+  } catch (err) {
+    return jsonResponse({ success: false, error: err.message });
+  }
+}
 
+function handleRequest(params) {
+  try {
     if (!params.eventTitle) throw new Error("Missing eventTitle");
 
     var seEmail = Session.getActiveUser().getEmail();
     var allEmails = [seEmail];
-    var incoming = params.emails;
+    var incoming = params.emails || null;
 
     if (incoming) {
       if (typeof incoming === "string") {
@@ -291,18 +294,15 @@ function doPost(e) {
 
     GmailApp.createDraft("", subject, body);
 
-    return ContentService.createTextOutput(JSON.stringify({
+    return jsonResponse({
       success: true,
       eventId: event.getId(),
       eventTitle: event.getTitle(),
       start: formattedStart,
       end: formatDate(event.getEndTime())
-    })).setMimeType(ContentService.MimeType.JSON);
+    });
 
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({
-      success: false,
-      error: err.message
-    })).setMimeType(ContentService.MimeType.JSON);
+    return jsonResponse({ success: false, error: err.message });
   }
 }
