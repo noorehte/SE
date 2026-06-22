@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { Brand } from "@/lib/metabase";
 import { COLUMNS } from "./Dashboard";
-import { X, ExternalLink } from "lucide-react";
+import { X, ExternalLink, CalendarPlus } from "lucide-react";
 
 const OWNER_INITIALS: Record<string, string> = {
   maha: "MH", noor: "NR", naumaan: "NM",
@@ -38,7 +39,35 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+type ScheduleState = "idle" | "loading" | "success" | "error";
+
 export default function BrandDetailPanel({ brand, onClose }: { brand: Brand; onClose: () => void }) {
+  const [scheduleState, setScheduleState] = useState<ScheduleState>("idle");
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+
+  async function handleScheduleCall() {
+    setScheduleState("loading");
+    setScheduleError(null);
+    try {
+      const res = await fetch("/api/schedule-calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId: brand.BRAND_ID }),
+      });
+      const data = await res.json();
+      const result = data.results?.[0];
+      if (result?.success) {
+        setScheduleState("success");
+      } else {
+        setScheduleState("error");
+        setScheduleError(result?.error ?? "Unknown error");
+      }
+    } catch (err) {
+      setScheduleState("error");
+      setScheduleError(String(err));
+    }
+  }
+
   const col = COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
   const hubspotUrl = brand.HUBSPOT_COMPANY_ID
     ? `https://app.hubspot.com/contacts/21791298/company/${brand.HUBSPOT_COMPANY_ID}`
@@ -136,6 +165,27 @@ export default function BrandDetailPanel({ brand, onClose }: { brand: Brand; onC
                   style={{ background: "rgba(249,115,22,0.1)", color: "#f97316", fontSize: "0.875rem" }}>
                   <ExternalLink size={14} /> HubSpot
                 </a>
+              )}
+              {brand.PIPELINE_STATUS === "just_signed" && (
+                <button
+                  onClick={handleScheduleCall}
+                  disabled={scheduleState === "loading" || scheduleState === "success"}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg transition-opacity text-left"
+                  style={{
+                    background: scheduleState === "success" ? "rgba(34,197,94,0.1)" : "rgba(114,164,191,0.1)",
+                    color: scheduleState === "success" ? "#22c55e" : scheduleState === "error" ? "#e05c5c" : "#72a4bf",
+                    fontSize: "0.875rem",
+                    opacity: scheduleState === "loading" ? 0.6 : 1,
+                    cursor: scheduleState === "success" ? "default" : "pointer",
+                    width: "100%",
+                    border: "none",
+                  }}>
+                  <CalendarPlus size={14} />
+                  {scheduleState === "idle" && "Schedule Brand Call"}
+                  {scheduleState === "loading" && "Scheduling…"}
+                  {scheduleState === "success" && "Call scheduled ✓"}
+                  {scheduleState === "error" && `Failed: ${scheduleError}`}
+                </button>
               )}
             </div>
           </div>
