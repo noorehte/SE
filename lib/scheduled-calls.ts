@@ -32,7 +32,7 @@ export function markScheduled(
   brandId: number,
   brandName: string,
   seOwner: string,
-  callDate: Date
+  callDate: string
 ): void {
   const data = read();
   data[String(brandId)] = {
@@ -40,7 +40,7 @@ export function markScheduled(
     brandName,
     seOwner,
     scheduledAt: new Date().toISOString(),
-    callDate: callDate.toISOString(),
+    callDate,
   };
   write(data);
 }

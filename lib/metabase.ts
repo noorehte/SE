@@ -49,6 +49,7 @@ export interface Brand {
   HAS_PENDING_BOARD_REVIEW: boolean;
   HAS_REJECTED_BY_BOARD: boolean;
   HAS_SHARE_THRESHOLD_MET: boolean;
+  KIND: string | null;
   PIPELINE_STATUS: PipelineStatus;
   DAYS_IN_STATUS: number;
 }
@@ -93,7 +94,7 @@ export async function getBrands(): Promise<Brand[]> {
     3407, // SUBMITTED_TO_MAB
   ];
 
-  const BRAND_STG_FIELDS = [766, 769, 764, 3282, 3279, 3280, 3281, 767]; // ID, NAME, HUBSPOT_COMPANY_ID, COLLABORATOR_CODE, SE_OWNER, OPS_OWNER, ACCOUNT_MANAGER, CREATED_AT
+  const BRAND_STG_FIELDS = [766, 769, 764, 3282, 3279, 3280, 3281, 767, 760]; // ID, NAME, HUBSPOT_COMPANY_ID, COLLABORATOR_CODE, SE_OWNER, OPS_OWNER, ACCOUNT_MANAGER, CREATED_AT, KIND
   const WIDGET_FIELDS = [3552, 3551, 3555];  // BRAND_ID, DAY, VIEWS
   const PRODUCT_FIELDS = [738, 731, 729];    // HEALTH_BRAND_ID, STATUS, DATE_PASSED_PROVIDER_THRESHOLD
 
@@ -115,6 +116,7 @@ export async function getBrands(): Promise<Brand[]> {
     OPS_OWNER: string | null;
     ACCOUNT_MANAGER: string | null;
     CREATED_AT: string;
+    KIND: string | null;
   }>();
   for (const r of stgBrandRows) {
     stgMap.set(r.ID, {
@@ -125,6 +127,7 @@ export async function getBrands(): Promise<Brand[]> {
       OPS_OWNER: r.OPS_OWNER,
       ACCOUNT_MANAGER: r.ACCOUNT_MANAGER,
       CREATED_AT: r.CREATED_AT,
+      KIND: r.KIND ?? null,
     });
   }
 
@@ -177,6 +180,7 @@ export async function getBrands(): Promise<Brand[]> {
       ...base,
       HUBSPOT_COMPANY_ID: stg?.HUBSPOT_COMPANY_ID ?? null,
       COLLABORATOR_CODE: stg?.COLLABORATOR_CODE ?? null,
+      KIND: stg?.KIND ?? null,
       PAYMENT_COMPLETED_AT: null,
       HAS_PENDING_BOARD_REVIEW: pendingBoardReview.has(brandId),
       HAS_REJECTED_BY_BOARD: rejectedByBoard.has(brandId),

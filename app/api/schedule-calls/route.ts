@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBrands } from "@/lib/metabase";
 import { scheduleCall } from "@/lib/calendar";
+import { addToWebinarSheet } from "@/lib/webinar-sheet";
 import { isScheduled, markScheduled, getAllScheduled } from "@/lib/scheduled-calls";
 
 export const dynamic = "force-dynamic";
 
-const WEEKS_OUT = 4;
+// strategic + vip → 1:1 call via Google Script
+// everything else (mid_market, enterprise, null) → webinar sheet for Mohammad
+const CALL_TIERS = new Set(["strategic", "vip"]);
 
 // ─── Cron GET ─────────────────────────────────────────────────────────────────
-// Called daily by the Vercel cron job (GET /api/schedule-calls).
-// Vercel automatically injects Authorization: Bearer <CRON_SECRET>.
-// Without a valid secret it falls back to returning the schedule log (read-only).
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
@@ -23,7 +23,6 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── Manual POST ──────────────────────────────────────────────────────────────
-// Called from BrandDetailPanel's "Schedule Call" button.
 // Body: { brandId: number }
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
@@ -50,39 +49,57 @@ async function runScheduling(onlyBrandIds: number[]) {
   const results: {
     brandId: number;
     brandName: string;
+    action: "call" | "webinar_sheet";
     success: boolean;
     callDate?: string;
     error?: string;
   }[] = [];
 
   for (const brand of candidates) {
-    if (!brand.SE_OWNER) {
+    const tier = brand.KIND?.toLowerCase() ?? null;
+    const isCallTier = tier !== null && CALL_TIERS.has(tier);
+
+    if (isCallTier) {
+      // ── Schedule 1:1 call ────────────────────────────────────────────────
+      if (!brand.SE_OWNER) {
+        results.push({ brandId: brand.BRAND_ID, brandName: brand.BRAND_NAME, action: "call", success: false, error: "No SE owner assigned" });
+        continue;
+      }
+
+      const result = await scheduleCall(brand.SE_OWNER, brand.BRAND_NAME);
+
+      if (result.success) {
+        markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER, result.scheduledDate ?? "");
+      }
+
       results.push({
         brandId: brand.BRAND_ID,
         brandName: brand.BRAND_NAME,
-        success: false,
-        error: "No SE owner assigned",
+        action: "call",
+        success: result.success,
+        callDate: result.scheduledDate,
+        error: result.error,
       });
-      continue;
+    } else {
+      // ── Add to webinar sheet ─────────────────────────────────────────────
+      const result = await addToWebinarSheet(
+        brand.BRAND_NAME,
+        brand.SE_OWNER ?? "Unassigned",
+        brand.KIND
+      );
+
+      if (result.success) {
+        markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER ?? "", `webinar_sheet:${new Date().toISOString()}`);
+      }
+
+      results.push({
+        brandId: brand.BRAND_ID,
+        brandName: brand.BRAND_NAME,
+        action: "webinar_sheet",
+        success: result.success,
+        error: result.error,
+      });
     }
-
-    const signedAt = new Date(brand.BRAND_CREATED_AT);
-    const callDate = new Date(signedAt);
-    callDate.setDate(callDate.getDate() + WEEKS_OUT * 7);
-
-    const result = await scheduleCall(brand.SE_OWNER, brand.BRAND_NAME, callDate);
-
-    if (result.success) {
-      markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER, callDate);
-    }
-
-    results.push({
-      brandId: brand.BRAND_ID,
-      brandName: brand.BRAND_NAME,
-      success: result.success,
-      callDate: callDate.toISOString(),
-      error: result.error,
-    });
   }
 
   return NextResponse.json({

@@ -13,27 +13,35 @@ export function getScriptUrl(seOwner: string): string | null {
 
 export async function scheduleCall(
   seOwner: string,
-  brandName: string,
-  callDate: Date
-): Promise<{ success: boolean; error?: string }> {
+  brandName: string
+): Promise<{ success: boolean; scheduledDate?: string; error?: string }> {
   const url = getScriptUrl(seOwner);
   if (!url) {
     return { success: false, error: `No script URL configured for SE: ${seOwner}` };
   }
 
-  const params = new URLSearchParams({
-    brandName,
-    date: callDate.toISOString(),
-  });
-
   try {
-    const res = await fetch(`${url}?${params}`, {
-      method: "GET",
-      redirect: "follow",
+    // GAS web apps redirect on POST — follow manually to avoid
+    // the redirect being converted to a GET (which hits doGet).
+    const initial = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        eventTitle: `Brand Call: ${brandName}`,
+        emails: [],
+      }),
+      redirect: "manual",
     });
 
+    // Follow the redirect with GET to retrieve the response content
+    const redirectUrl = initial.headers.get("location");
+    if (!redirectUrl) {
+      return { success: false, error: "No redirect from script — check deployment" };
+    }
+
+    const res = await fetch(redirectUrl);
     if (!res.ok) {
-      return { success: false, error: `Script returned HTTP ${res.status}` };
+      return { success: false, error: `Script echo returned HTTP ${res.status}` };
     }
 
     const json = await res.json();
@@ -41,7 +49,7 @@ export async function scheduleCall(
       return { success: false, error: json.error ?? "Script returned success: false" };
     }
 
-    return { success: true };
+    return { success: true, scheduledDate: json.start };
   } catch (err) {
     return { success: false, error: String(err) };
   }
