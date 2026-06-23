@@ -4,15 +4,16 @@
  * SETUP (repeat for all 4 SE scripts):
  * 1. Open your Google Apps Script project
  * 2. Replace the entire existing code with this file
- * 3. Deploy → Manage deployments → Edit (pencil icon)
- * 4. Set "Who has access" → Anyone
- * 5. Click Deploy
- *
- * The only change from the original: after creating the calendar event,
- * a Gmail draft is created in the SE's inbox.
+ * 3. Set SE_EMAIL below to your own email address
+ * 4. Deploy → Manage deployments → Edit (pencil icon)
+ * 5. Set "Who has access" → Anyone
+ * 6. Click Deploy
  *
  * TODO: replace WEBINAR_LINK_HERE with the real webinar URL.
  */
+
+// ⚠️ SET THIS to the email of whoever is deploying this script
+var SE_EMAIL = "your-email@thefrontrowhealth.com";
 
 var WEBINAR_LINK = "WEBINAR_LINK_HERE";
 
@@ -235,7 +236,7 @@ function handleRequest(params) {
   try {
     if (!params.eventTitle) throw new Error("Missing eventTitle");
 
-    var seEmail = Session.getActiveUser().getEmail();
+    var seEmail = SE_EMAIL;
     var allEmails = [seEmail];
     var incoming = params.emails || null;
 
@@ -305,4 +306,10 @@ function handleRequest(params) {
   } catch (err) {
     return jsonResponse({ success: false, error: err.message });
   }
+}
+
+function jsonResponse(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }
