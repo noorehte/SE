@@ -1,6 +1,6 @@
 const SE_SCRIPT_URLS: Record<string, string> = {
   mohammad:
-    "https://script.google.com/macros/s/AKfycbyqfDKpqiUy4RsxVbcl6VZQ-W7ov80DMlW7Nii0jKZSpeuofN7u4HVmbC-o2MSwhNn7/exec",
+    "https://script.google.com/macros/s/AKfycbxzD6mYqa3rNEk9PzOn3j-wMHzIMFs-Gy2uGRDTpOAZZ9KpkB1BdeUHtggv8rqaYTk-/exec",
   noor: "https://script.google.com/macros/s/AKfycbwh_2lvCzU1AGNLDX5KMhh5SQoqujxzog1zCE_kItVH7tAR-WD5gmbDVzMuYSUyr2qAxQ/exec",
   naumaan:
     "https://script.google.com/macros/s/AKfycbxUHl1cs5pCmlI5ZToTyIG30Riub979c6xm1WMEwXzj7auxMNO6XVdfe8EAqzTS3IF6sA/exec",

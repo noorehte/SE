@@ -121,16 +121,12 @@ function findSlot(eventTitle, durationMinutes, startDate, endDate, calendarIds, 
   var durationMs = durationMinutes * 60 * 1000;
   var busyPeriods = [];
 
-  for (var c = 0; c < calendarIds.length; c++) {
-    var cal = CalendarApp.getCalendarById(calendarIds[c]);
-    if (!cal) throw new Error("Calendar not found: " + calendarIds[c]);
-    var events = cal.getEvents(startDate, endDate);
-    for (var ev = 0; ev < events.length; ev++) {
-      var evStart = events[ev].getStartTime();
-      var evEnd = events[ev].getEndTime();
-      if (evStart && !isNaN(evStart.getTime()) && evEnd && !isNaN(evEnd.getTime())) {
-        busyPeriods.push({ start: evStart.getTime(), end: evEnd.getTime() });
-      }
+  var events = calendar.getEvents(startDate, endDate);
+  for (var ev = 0; ev < events.length; ev++) {
+    var evStart = events[ev].getStartTime();
+    var evEnd = events[ev].getEndTime();
+    if (evStart && !isNaN(evStart.getTime()) && evEnd && !isNaN(evEnd.getTime())) {
+      busyPeriods.push({ start: evStart.getTime(), end: evEnd.getTime() });
     }
   }
 
@@ -189,11 +185,8 @@ function findSlot(eventTitle, durationMinutes, startDate, endDate, calendarIds, 
         dayEnd.setHours(23, 59, 59, 999);
 
         var skipDay = false;
-        for (var cc = 0; cc < calendarIds.length; cc++) {
-          var calCheck = CalendarApp.getCalendarById(calendarIds[cc]);
-          if (calCheck.getEvents(dayStart, dayEnd).length >= 6) {
-            skipDay = true;
-          }
+        if (calendar.getEvents(dayStart, dayEnd).length >= 6) {
+          skipDay = true;
         }
 
         if (skipDay) {

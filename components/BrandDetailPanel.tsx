@@ -166,7 +166,7 @@ export default function BrandDetailPanel({ brand, onClose }: { brand: Brand; onC
                   <ExternalLink size={14} /> HubSpot
                 </a>
               )}
-              {brand.PIPELINE_STATUS === "just_signed" && (
+              {(brand.PIPELINE_STATUS === "just_signed" || brand.PIPELINE_STATUS === "pending_mab_review") && (
                 <button
                   onClick={handleScheduleCall}
                   disabled={scheduleState === "loading" || scheduleState === "success"}
