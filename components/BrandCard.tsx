@@ -12,6 +12,13 @@ const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
   was_live: "Re-activation needed",
 };
 
+const SEGMENT_STYLES: Record<string, { label: string; color: string }> = {
+  vip:         { label: "VIP",         color: "#a78bfa" },
+  strategic:   { label: "Strategic",   color: "#34d399" },
+  enterprise:  { label: "Enterprise",  color: "#60a5fa" },
+  mid_market:  { label: "Mid-Market",  color: "#fbbf24" },
+};
+
 const OWNER_INITIALS: Record<string, string> = {
   maha: "MH", noor: "NR", naumaan: "NM",
   mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK",
@@ -37,9 +44,22 @@ export default function BrandCard({ brand, accent }: { brand: Brand; accent: str
       borderLeft: `3px solid ${isStuck ? "#e05c5c" : accent}`,
     }}>
       <div className="flex items-start justify-between gap-2 mb-3">
-        <span style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "0.95rem", fontWeight: 700, color: "#fff", lineHeight: 1.3 }}>
-          {brand.BRAND_NAME}
-        </span>
+        <div>
+          <span style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "0.95rem", fontWeight: 700, color: "#fff", lineHeight: 1.3 }}>
+            {brand.BRAND_NAME}
+          </span>
+          {brand.KIND && SEGMENT_STYLES[brand.KIND] && (
+            <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-xs font-medium" style={{
+              background: SEGMENT_STYLES[brand.KIND].color + "22",
+              color: SEGMENT_STYLES[brand.KIND].color,
+              fontSize: "0.7rem",
+              display: "block",
+              width: "fit-content",
+            }}>
+              {SEGMENT_STYLES[brand.KIND].label}
+            </span>
+          )}
+        </div>
         <div className="flex gap-2 shrink-0 mt-0.5">
           {hubspotUrl && (
             <a href={hubspotUrl} target="_blank" rel="noopener noreferrer" title="HubSpot" style={{ color: "#f97316", opacity: 0.7 }} className="hover:opacity-100">
