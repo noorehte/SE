@@ -121,6 +121,7 @@ export default function BrandDetailPanel({ brand, onClose }: { brand: Brand; onC
           {/* Pipeline */}
           <div className="mb-6">
             <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Pipeline</div>
+            <Row label="Segment" value={brand.KIND ?? "Not set"} />
             <Row label="Days in status" value={<span style={{ color: isStuck ? "#e05c5c" : "#fff" }}>{brand.DAYS_IN_STATUS}d</span>} />
             <Row label="Created" value={new Date(brand.BRAND_CREATED_AT).toLocaleDateString()} />
             <Row label="Last sign-in" value={brand.ANY_ADMIN_LAST_SIGNED_IN_AT ? new Date(brand.ANY_ADMIN_LAST_SIGNED_IN_AT).toLocaleDateString() : "Never"} />

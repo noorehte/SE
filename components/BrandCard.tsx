@@ -48,15 +48,15 @@ export default function BrandCard({ brand, accent }: { brand: Brand; accent: str
           <span style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "0.95rem", fontWeight: 700, color: "#fff", lineHeight: 1.3 }}>
             {brand.BRAND_NAME}
           </span>
-          {brand.KIND && SEGMENT_STYLES[brand.KIND] && (
+          {brand.KIND && SEGMENT_STYLES[brand.KIND.toLowerCase()] && (
             <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-xs font-medium" style={{
-              background: SEGMENT_STYLES[brand.KIND].color + "22",
-              color: SEGMENT_STYLES[brand.KIND].color,
+              background: SEGMENT_STYLES[brand.KIND.toLowerCase()].color + "22",
+              color: SEGMENT_STYLES[brand.KIND.toLowerCase()].color,
               fontSize: "0.7rem",
               display: "block",
               width: "fit-content",
             }}>
-              {SEGMENT_STYLES[brand.KIND].label}
+              {SEGMENT_STYLES[brand.KIND.toLowerCase()].label}
             </span>
           )}
         </div>
