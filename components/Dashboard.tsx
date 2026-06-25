@@ -7,6 +7,14 @@ import BrandDetailPanel from "./BrandDetailPanel";
 import { LayoutGrid, List, RefreshCw } from "lucide-react";
 import Sidebar from "./Sidebar";
 
+export interface ScheduledCall {
+  brandId: number;
+  brandName: string;
+  seOwner: string;
+  scheduledAt: string;
+  callDate: string;
+}
+
 export const COLUMNS: { id: PipelineStatus; label: string; accent: string }[] = [
   { id: "just_signed",            label: "Just Signed",                  accent: "#72a4bf" },
   { id: "pending_mab_review",     label: "Products Being Reviewed",      accent: "#e9a84c" },
@@ -18,8 +26,9 @@ export const COLUMNS: { id: PipelineStatus; label: string; accent: string }[] = 
 
 const SE_OWNERS = ["maha", "noor", "naumaan"];
 
-export default function Dashboard({ initialBrands }: { initialBrands: Brand[] }) {
+export default function Dashboard({ initialBrands, initialScheduledCalls }: { initialBrands: Brand[]; initialScheduledCalls: Record<string, ScheduledCall> }) {
   const [brands, setBrands] = useState(initialBrands);
+  const [scheduledCalls] = useState(initialScheduledCalls);
   const [view, setView] = useState<"kanban" | "table">("kanban");
   const [seFilter, setSeFilter] = useState<string>("all");
   const [columnFilter, setColumnFilter] = useState<PipelineStatus | null>(null);
@@ -140,12 +149,13 @@ export default function Dashboard({ initialBrands }: { initialBrands: Brand[] })
             <KanbanView
               brands={filtered}
               columnFilter={columnFilter}
+              scheduledCalls={scheduledCalls}
               onMove={moveBrand}
               onCardClick={setSelectedBrand}
               onHeaderClick={toggleColumnFilter}
             />
           ) : (
-            <TableView brands={visibleBrands} onMove={moveBrand} onRowClick={setSelectedBrand} />
+            <TableView brands={visibleBrands} scheduledCalls={scheduledCalls} onMove={moveBrand} onRowClick={setSelectedBrand} />
           )}
         </div>
 
@@ -168,7 +178,11 @@ export default function Dashboard({ initialBrands }: { initialBrands: Brand[] })
 
       {/* Brand detail panel */}
       {selectedBrand && (
-        <BrandDetailPanel brand={selectedBrand} onClose={() => setSelectedBrand(null)} />
+        <BrandDetailPanel
+          brand={selectedBrand}
+          scheduledCall={scheduledCalls[String(selectedBrand.BRAND_ID)] ?? null}
+          onClose={() => setSelectedBrand(null)}
+        />
       )}
     </div>
   );
@@ -177,12 +191,14 @@ export default function Dashboard({ initialBrands }: { initialBrands: Brand[] })
 function KanbanView({
   brands,
   columnFilter,
+  scheduledCalls,
   onMove,
   onCardClick,
   onHeaderClick,
 }: {
   brands: Brand[];
   columnFilter: PipelineStatus | null;
+  scheduledCalls: Record<string, ScheduledCall>;
   onMove: (brandId: number, status: PipelineStatus) => void;
   onCardClick: (brand: Brand) => void;
   onHeaderClick: (id: PipelineStatus) => void;
@@ -239,7 +255,7 @@ function KanbanView({
                   onClick={() => onCardClick(brand)}
                   className="cursor-pointer active:cursor-grabbing"
                   style={{ cursor: "grab" }}>
-                  <BrandCard brand={brand} accent={col.accent} />
+                  <BrandCard brand={brand} accent={col.accent} scheduledCall={scheduledCalls[String(brand.BRAND_ID)] ?? null} />
                 </div>
               ))}
               {colBrands.length === 0 && (
@@ -255,10 +271,12 @@ function KanbanView({
 
 function TableView({
   brands,
+  scheduledCalls,
   onMove,
   onRowClick,
 }: {
   brands: Brand[];
+  scheduledCalls: Record<string, ScheduledCall>;
   onMove: (brandId: number, status: PipelineStatus) => void;
   onRowClick: (brand: Brand) => void;
 }) {
@@ -288,7 +306,7 @@ function TableView({
     <div className="rounded-xl overflow-hidden" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
       <table className="w-full">
         <thead style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-          <tr><Th label="Brand" field="BRAND_NAME" /><Th label="Status" field="PIPELINE_STATUS" /><Th label="SE" field="SE_OWNER" /><Th label="AM" field="ACCOUNT_MANAGER" /><Th label="Ops" field="OPS_OWNER" /><Th label="Days" field="DAYS_IN_STATUS" /><th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th></tr>
+          <tr><Th label="Brand" field="BRAND_NAME" /><Th label="Status" field="PIPELINE_STATUS" /><Th label="SE" field="SE_OWNER" /><Th label="AM" field="ACCOUNT_MANAGER" /><Th label="Ops" field="OPS_OWNER" /><Th label="Days" field="DAYS_IN_STATUS" /><th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Call</th><th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th></tr>
         </thead>
         <tbody>
           {sorted.map((brand) => {
@@ -313,6 +331,15 @@ function TableView({
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ACCOUNT_MANAGER ?? "—"}</td>
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.OPS_OWNER ?? "—"}</td>
                 <td className="px-4 py-3 font-semibold" style={{ color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.4)", fontSize: "0.875rem" }}>{brand.DAYS_IN_STATUS}d</td>
+                <td className="px-4 py-3">
+                  {scheduledCalls[String(brand.BRAND_ID)] ? (
+                    <span style={{ fontSize: "0.8rem", color: "#4caf82" }}>
+                      ✓ {new Date(scheduledCalls[String(brand.BRAND_ID)].callDate).toLocaleDateString()}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.2)" }}>—</span>
+                  )}
+                </td>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <div className="flex gap-3">
                     {hubspotUrl && <a href={hubspotUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#f97316", fontSize: "0.8rem" }} className="hover:opacity-70">HS</a>}

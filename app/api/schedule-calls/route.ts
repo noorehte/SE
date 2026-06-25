@@ -3,6 +3,7 @@ import { getBrands } from "@/lib/metabase";
 import { scheduleCall } from "@/lib/calendar";
 import { addToWebinarSheet } from "@/lib/webinar-sheet";
 import { isScheduled, markScheduled, getAllScheduled } from "@/lib/scheduled-calls";
+import { getCompanyContactEmails } from "@/lib/hubspot";
 
 export const dynamic = "force-dynamic";
 
@@ -42,9 +43,7 @@ async function runScheduling(onlyBrandIds: number[]) {
   const candidates =
     onlyBrandIds.length > 0
       ? brands.filter((b) => onlyBrandIds.includes(b.BRAND_ID))
-      : brands.filter(
-          (b) => b.PIPELINE_STATUS === "just_signed" && !isScheduled(b.BRAND_ID)
-        );
+      : await Promise.all(brands.map(async (b) => ({ brand: b, skip: b.PIPELINE_STATUS !== "just_signed" || await isScheduled(b.BRAND_ID) }))).then(results => results.filter(r => !r.skip).map(r => r.brand));
 
   const results: {
     brandId: number;
@@ -66,10 +65,13 @@ async function runScheduling(onlyBrandIds: number[]) {
         continue;
       }
 
-      const result = await scheduleCall(brand.SE_OWNER, brand.BRAND_NAME);
+      const contactEmails = brand.HUBSPOT_COMPANY_ID
+        ? await getCompanyContactEmails(brand.HUBSPOT_COMPANY_ID)
+        : [];
+      const result = await scheduleCall(brand.SE_OWNER, brand.BRAND_NAME, contactEmails);
 
       if (result.success) {
-        markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER, result.scheduledDate ?? "");
+        await markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER, result.scheduledDate ?? "", "call");
       }
 
       results.push({
@@ -89,7 +91,7 @@ async function runScheduling(onlyBrandIds: number[]) {
       );
 
       if (result.success) {
-        markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER ?? "", `webinar_sheet:${new Date().toISOString()}`);
+        await markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER ?? "", new Date().toISOString(), "webinar_sheet");
       }
 
       results.push({

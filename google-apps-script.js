@@ -286,7 +286,12 @@ function handleRequest(params) {
       "Best,\n" +
       "[Your name]";
 
-    GmailApp.createDraft("", subject, body);
+    // Use first non-SE contact email as draft recipient
+    var draftTo = "";
+    for (var d = 0; d < uniqueEmails.length; d++) {
+      if (uniqueEmails[d] !== seEmail) { draftTo = uniqueEmails[d]; break; }
+    }
+    GmailApp.createDraft(draftTo, subject, body);
 
     return jsonResponse({
       success: true,

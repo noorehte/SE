@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Brand } from "@/lib/metabase";
-import { COLUMNS } from "./Dashboard";
-import { X, ExternalLink, CalendarPlus } from "lucide-react";
+import { COLUMNS, ScheduledCall } from "./Dashboard";
+import { X, ExternalLink, CalendarPlus, Copy, Check } from "lucide-react";
 
 const OWNER_INITIALS: Record<string, string> = {
   maha: "MH", noor: "NR", naumaan: "NM",
@@ -41,9 +41,24 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 type ScheduleState = "idle" | "loading" | "success" | "error";
 
-export default function BrandDetailPanel({ brand, onClose }: { brand: Brand; onClose: () => void }) {
+export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { brand: Brand; scheduledCall: ScheduledCall | null; onClose: () => void }) {
   const [scheduleState, setScheduleState] = useState<ScheduleState>("idle");
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [contacts, setContacts] = useState<string[]>([]);
+  const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!brand.HUBSPOT_COMPANY_ID) return;
+    fetch(`/api/hubspot-contacts?hubspotCompanyId=${brand.HUBSPOT_COMPANY_ID}`)
+      .then((r) => r.json())
+      .then((d) => setContacts(d.emails ?? []));
+  }, [brand.HUBSPOT_COMPANY_ID]);
+
+  function copyEmail(email: string) {
+    navigator.clipboard.writeText(email);
+    setCopiedEmail(email);
+    setTimeout(() => setCopiedEmail(null), 2000);
+  }
 
   async function handleScheduleCall() {
     setScheduleState("loading");
@@ -118,6 +133,29 @@ export default function BrandDetailPanel({ brand, onClose }: { brand: Brand; onC
             </div>
           </div>
 
+          {/* Contacts */}
+          {brand.HUBSPOT_COMPANY_ID && (
+            <div className="mb-6">
+              <div className="mb-3" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Contacts</div>
+              {contacts.length === 0 ? (
+                <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.25)" }}>Loading…</div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {contacts.map((email) => (
+                    <div key={email} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg"
+                      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                      <span style={{ fontSize: "0.85rem", color: "#fff" }}>{email}</span>
+                      <button onClick={() => copyEmail(email)} className="hover:opacity-70 flex-shrink-0"
+                        style={{ color: copiedEmail === email ? "#4caf82" : "rgba(255,255,255,0.3)" }}>
+                        {copiedEmail === email ? <Check size={13} /> : <Copy size={13} />}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Pipeline */}
           <div className="mb-6">
             <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Pipeline</div>
@@ -147,6 +185,14 @@ export default function BrandDetailPanel({ brand, onClose }: { brand: Brand; onC
           {/* Implementation */}
           <div className="mb-6">
             <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Implementation</div>
+            <Row
+              label="Impl. call"
+              value={
+                scheduledCall
+                  ? <span style={{ color: "#4caf82" }}>✓ {new Date(scheduledCall.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+                  : <span style={{ color: "rgba(255,255,255,0.3)" }}>Not scheduled</span>
+              }
+            />
             <Row label="Share threshold met" value={brand.SUBMITTED_TO_MAB ? "Yes" : "No"} />
             <Row label="Collaborator code" value={brand.COLLABORATOR_CODE ?? "Not set"} />
           </div>

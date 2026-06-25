@@ -13,7 +13,8 @@ export function getScriptUrl(seOwner: string): string | null {
 
 export async function scheduleCall(
   seOwner: string,
-  brandName: string
+  brandName: string,
+  contactEmails: string[] = []
 ): Promise<{ success: boolean; scheduledDate?: string; error?: string }> {
   const url = getScriptUrl(seOwner);
   if (!url) {
@@ -23,6 +24,7 @@ export async function scheduleCall(
   try {
     const params = new URLSearchParams({
       eventTitle: `Brand Call: ${brandName}`,
+      ...(contactEmails.length > 0 && { emails: contactEmails.join(",") }),
     });
 
     const res = await fetch(`${url}?${params}`, {

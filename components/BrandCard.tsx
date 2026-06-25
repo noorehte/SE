@@ -1,7 +1,8 @@
 "use client";
 
 import { Brand, PipelineStatus } from "@/lib/metabase";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, CalendarCheck } from "lucide-react";
+import { ScheduledCall } from "./Dashboard";
 
 const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
   just_signed: "Awaiting MAB product review",
@@ -29,7 +30,7 @@ function initials(name: string | null) {
   return OWNER_INITIALS[name.toLowerCase()] ?? name.slice(0, 2).toUpperCase();
 }
 
-export default function BrandCard({ brand, accent }: { brand: Brand; accent: string }) {
+export default function BrandCard({ brand, accent, scheduledCall }: { brand: Brand; accent: string; scheduledCall: ScheduledCall | null }) {
   const isStuck = brand.DAYS_IN_STATUS > 7;
   const blockingItem = BLOCKING_ITEMS[brand.PIPELINE_STATUS];
   const hubspotUrl = brand.HUBSPOT_COMPANY_ID
@@ -87,7 +88,13 @@ export default function BrandCard({ brand, accent }: { brand: Brand; accent: str
         </span>
       </div>
 
-      {blockingItem && (
+      {scheduledCall && (
+        <div className="flex items-center gap-1.5 mt-2" style={{ fontSize: "0.75rem", color: "#4caf82" }}>
+          <CalendarCheck size={11} />
+          Call {new Date(scheduledCall.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+        </div>
+      )}
+      {!scheduledCall && blockingItem && (
         <div style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>
           {blockingItem}
         </div>
