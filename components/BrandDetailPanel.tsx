@@ -228,10 +228,10 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
                     border: "none",
                   }}>
                   <CalendarPlus size={14} />
-                  {scheduleState === "idle" && "Schedule Brand Call"}
+                  {scheduleState === "idle" && "Schedule Implementation Call"}
                   {scheduleState === "loading" && "Scheduling…"}
                   {scheduleState === "success" && "Call scheduled ✓"}
-                  {scheduleState === "error" && `Failed: ${scheduleError}`}
+                  {scheduleState === "error" && "Scheduling failed — check Apps Script deployment"}
                 </button>
               )}
             </div>

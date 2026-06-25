@@ -15,7 +15,7 @@
 // ⚠️ SET THIS to the email of whoever is deploying this script
 var SE_EMAIL = "your-email@thefrontrowhealth.com";
 
-var WEBINAR_LINK = "WEBINAR_LINK_HERE";
+var WEBINAR_LINK = "https://app.livestorm.co/frontrowmd/frontrowmd-implementation?s=fec605b5-8947-43eb-8a43-dd136b08eaed";
 
 var HOLIDAYS = [
   // 2025
