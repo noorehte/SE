@@ -1,10 +1,10 @@
 const SE_SCRIPT_URLS: Record<string, string> = {
   mohammad:
-    "https://script.google.com/macros/s/AKfycbxGPVa4AsQ3HaCeGIe28jNh-WBU5PPp2FmM4cf0ht-pmaMgvUsQjlqb5t6qjvNduucg/exec",
-  noor: "https://script.google.com/macros/s/AKfycbyU_RR_oZRw9Zuds2qfJkz6saqVsJ3pzx2z7muiE6TZxvJySrwFmOVzL7ZuId1_i1MdNg/exec",
+    "https://script.google.com/macros/s/AKfycbwTqgDoS9gp0B5pYbrhKbW7QTPkEY0opVCw9USIgKM8IFC9C7B47-MRJjxYmiGUGMVZ/exec",
+  noor: "https://script.google.com/macros/s/AKfycbzi-sof4cYR-9R75QjBpeGnuZSYw7_sYFZ5RrKoP8nz1mvnwN4T9kgD9FVkOCUcs-jK-A/exec",
   naumaan:
-    "https://script.google.com/macros/s/AKfycbw1CpQr3wat7v9X7aXxsPsK7mG-oWK17dmuzdH3Mt2yr0zQ9lQ5-KtnmrykhE8-MLFkfg/exec",
-  maha: "https://script.google.com/macros/s/AKfycbwl7vki8oMRE-GMyPstxYOxRkXaxXsYGfjN5EIzAdVTWm9eJ3db1Vr6-sG3vPrXX7TRUQ/exec",
+    "https://script.google.com/macros/s/AKfycbw0B5OJfOFdRlv2ZB3QXixOI5aEtvOIpftffmurZubvcTNhI-A_gYzz7F2YOlEauYLjsw/exec",
+  maha: "https://script.google.com/macros/s/AKfycbw_opIiYn3Q1jkdKQtdlQhV6kX8JE3Dy2FeUkevaoKiFn1ieZVH1jE1HYEUGvGogWK8RQ/exec",
 };
 
 export function getScriptUrl(seOwner: string): string | null {
