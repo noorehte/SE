@@ -177,7 +177,7 @@ export async function getBrands(): Promise<Brand[]> {
   }
 
   const now = Date.now();
-  const overrides = getAllOverrides();
+  const overrides = await getAllOverrides();
   const onboardingIds = new Set(onboardingRows.map((r: { BRAND_ID: number }) => r.BRAND_ID));
 
   function buildBrand(

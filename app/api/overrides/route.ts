@@ -7,9 +7,9 @@ export async function POST(req: NextRequest) {
   if (!brandId) return NextResponse.json({ error: "brandId required" }, { status: 400 });
 
   if (status === null) {
-    clearOverride(brandId);
+    await clearOverride(brandId);
   } else {
-    setOverride(brandId, status as PipelineStatus);
+    await setOverride(brandId, status as PipelineStatus);
   }
 
   return NextResponse.json({ ok: true });
