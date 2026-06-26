@@ -89,7 +89,7 @@ export default function AlertsPage({ initialBrands }: { initialBrands: Brand[] }
                     const cfg = ALERT_CONFIGS.find(c => c.type === alert.type)!;
                     const col = COLUMNS.find(c => c.id === alert.brand.PIPELINE_STATUS);
                     const hubspotUrl = alert.brand.HUBSPOT_COMPANY_ID ? `https://app.hubspot.com/contacts/21791298/company/${alert.brand.HUBSPOT_COMPANY_ID}` : null;
-                    const adminUrl = `https://frontrowmd.com/admin/health_brands/${alert.brand.BRAND_ID}`;
+                    const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${alert.brand.BRAND_ID}`;
                     return (
                       <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}

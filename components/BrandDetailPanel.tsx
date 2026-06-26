@@ -90,7 +90,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
   const hubspotUrl = brand.HUBSPOT_COMPANY_ID
     ? `https://app.hubspot.com/contacts/21791298/company/${brand.HUBSPOT_COMPANY_ID}`
     : null;
-  const adminUrl = `https://frontrowmd.com/admin/health_brands/${brand.BRAND_ID}`;
+  const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
   const isStuck = brand.DAYS_IN_STATUS > 7;
 
   return (
