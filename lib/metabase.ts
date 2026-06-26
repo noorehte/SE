@@ -104,7 +104,7 @@ export async function getBrands(): Promise<Brand[]> {
   ];
 
   const BRAND_STG_FIELDS = [766, 769, 764, 3282, 3279, 3280, 3281, 767, 760]; // ID, NAME, HUBSPOT_COMPANY_ID, COLLABORATOR_CODE, SE_OWNER, OPS_OWNER, ACCOUNT_MANAGER, CREATED_AT, KIND
-  // No field restriction on table 464 — fetch all columns so we can detect the widget TYPE column dynamically
+  const WIDGET_FIELDS = [3552, 3551, 3555];  // BRAND_ID, DAY, VIEWS
   const PRODUCT_FIELDS = [738, 731, 729];    // HEALTH_BRAND_ID, STATUS, DATE_PASSED_PROVIDER_THRESHOLD
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -112,7 +112,7 @@ export async function getBrands(): Promise<Brand[]> {
   const [onboardingRows, stgBrandRows, widgetRows, productRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203, BRAND_STG_FIELDS),
-    metabaseQuery(464),  // all fields — we detect TYPE column below
+    metabaseQuery(464, WIDGET_FIELDS),
     metabaseQuery(202, PRODUCT_FIELDS),
   ]);
 
@@ -140,29 +140,14 @@ export async function getBrands(): Promise<Brand[]> {
     });
   }
 
-  // Widget activity — dynamically detect the TYPE column (could be TYPE, WIDGET_TYPE, KIND, etc.)
-  const firstWidgetRow = widgetRows[0] ?? {};
-  const widgetTypeKey = Object.keys(firstWidgetRow).find((k) => {
-    const l = k.toLowerCase();
-    return (l === "type" || l === "widget_type" || l === "kind" || l.includes("widget") || l === "platform")
-      && !l.includes("brand") && !l.includes("day") && !l.includes("view");
-  });
-
+  // Widget activity (WIDGET_TYPES will be empty until TYPE field ID is confirmed)
   const recentWidgetBrands = new Set<number>();
   const anyWidgetBrands = new Set<number>();
   const brandWidgetTypes = new Map<number, Set<string>>();
   for (const r of widgetRows) {
-    const views = r.VIEWS ?? r.views ?? 0;
-    const brandId = r.BRAND_ID ?? r.brand_id;
-    const day = r.DAY ?? r.day ?? "";
-    if (views > 0 && brandId) {
-      anyWidgetBrands.add(brandId);
-      if (day >= thirtyDaysAgo) recentWidgetBrands.add(brandId);
-      if (widgetTypeKey && r[widgetTypeKey]) {
-        const t = String(r[widgetTypeKey]).toLowerCase();
-        if (!brandWidgetTypes.has(brandId)) brandWidgetTypes.set(brandId, new Set());
-        brandWidgetTypes.get(brandId)!.add(t);
-      }
+    if (r.VIEWS > 0) {
+      anyWidgetBrands.add(r.BRAND_ID);
+      if (r.DAY >= thirtyDaysAgo) recentWidgetBrands.add(r.BRAND_ID);
     }
   }
 
