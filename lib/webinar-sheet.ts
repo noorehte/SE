@@ -15,15 +15,11 @@ export async function addToWebinarSheet(
   }
 
   try {
-    const params = new URLSearchParams({
-      brandName,
-      seName,
-      segment: segment ?? "Unknown",
-    });
-
-    const res = await fetch(`${SCRIPT_URL}?${params}`, {
-      method: "GET",
+    const res = await fetch(SCRIPT_URL, {
+      method: "POST",
       redirect: "follow",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ brandName, seName, segment: segment ?? "Unknown" }),
     });
 
     if (!res.ok) {

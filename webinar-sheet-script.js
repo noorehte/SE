@@ -17,13 +17,10 @@
 
 var SHEET_NAME = "Brands We Need to Schedule";
 
-function doGet(e) {
-  return handleRequest(e.parameter || {});
-}
-
 function doPost(e) {
   try {
-    return handleRequest(JSON.parse(e.postData.contents));
+    var params = JSON.parse(e.postData.contents);
+    return handleRequest(params);
   } catch (err) {
     return jsonResponse({ success: false, error: err.message });
   }
