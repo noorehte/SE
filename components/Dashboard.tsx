@@ -13,6 +13,7 @@ export interface ScheduledCall {
   seOwner: string;
   scheduledAt: string;
   callDate: string;
+  action?: "call" | "webinar_sheet";
 }
 
 export const COLUMNS: { id: PipelineStatus; label: string; accent: string }[] = [
