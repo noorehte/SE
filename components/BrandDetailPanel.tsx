@@ -40,9 +40,11 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 type ScheduleState = "idle" | "loading" | "success" | "error";
+type ScheduleAction = "call" | "webinar";
 
 export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { brand: Brand; scheduledCall: ScheduledCall | null; onClose: () => void }) {
   const [scheduleState, setScheduleState] = useState<ScheduleState>("idle");
+  const [scheduleAction, setScheduleAction] = useState<ScheduleAction | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [contacts, setContacts] = useState<string[]>([]);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
@@ -60,14 +62,15 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
     setTimeout(() => setCopiedEmail(null), 2000);
   }
 
-  async function handleScheduleCall() {
+  async function handleSchedule(action: ScheduleAction) {
     setScheduleState("loading");
+    setScheduleAction(action);
     setScheduleError(null);
     try {
       const res = await fetch("/api/schedule-calls", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId: brand.BRAND_ID }),
+        body: JSON.stringify({ brandId: brand.BRAND_ID, action }),
       });
       const data = await res.json();
       const result = data.results?.[0];
@@ -214,25 +217,35 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
                 </a>
               )}
               {(brand.PIPELINE_STATUS === "just_signed" || brand.PIPELINE_STATUS === "pending_mab_review") && (
-                <button
-                  onClick={handleScheduleCall}
-                  disabled={scheduleState === "loading" || scheduleState === "success"}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg transition-opacity text-left"
-                  style={{
-                    background: scheduleState === "success" ? "rgba(34,197,94,0.1)" : "rgba(114,164,191,0.1)",
-                    color: scheduleState === "success" ? "#22c55e" : scheduleState === "error" ? "#e05c5c" : "#72a4bf",
-                    fontSize: "0.875rem",
-                    opacity: scheduleState === "loading" ? 0.6 : 1,
-                    cursor: scheduleState === "success" ? "default" : "pointer",
-                    width: "100%",
-                    border: "none",
-                  }}>
-                  <CalendarPlus size={14} />
-                  {scheduleState === "idle" && "Schedule Implementation Call"}
-                  {scheduleState === "loading" && "Scheduling…"}
-                  {scheduleState === "success" && "Call scheduled ✓"}
-                  {scheduleState === "error" && "Scheduling failed — check Apps Script deployment"}
-                </button>
+                scheduleState === "success" ? (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e", fontSize: "0.875rem" }}>
+                    <CalendarPlus size={14} />
+                    {scheduleAction === "call" ? "Call scheduled ✓" : "Added to webinar list ✓"}
+                  </div>
+                ) : scheduleState === "error" ? (
+                  <div className="px-3 py-2 rounded-lg" style={{ background: "rgba(224,92,92,0.1)", color: "#e05c5c", fontSize: "0.8rem" }}>
+                    Failed — check Apps Script deployment
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => handleSchedule("call")}
+                      disabled={scheduleState === "loading"}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg transition-opacity text-left"
+                      style={{ background: "rgba(114,164,191,0.1)", color: "#72a4bf", fontSize: "0.875rem", opacity: scheduleState === "loading" && scheduleAction === "call" ? 0.6 : 1, border: "none", cursor: "pointer", width: "100%" }}>
+                      <CalendarPlus size={14} />
+                      {scheduleState === "loading" && scheduleAction === "call" ? "Scheduling…" : "Schedule 1:1 Call"}
+                    </button>
+                    <button
+                      onClick={() => handleSchedule("webinar")}
+                      disabled={scheduleState === "loading"}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg transition-opacity text-left"
+                      style={{ background: "rgba(139,127,232,0.1)", color: "#8b7fe8", fontSize: "0.875rem", opacity: scheduleState === "loading" && scheduleAction === "webinar" ? 0.6 : 1, border: "none", cursor: "pointer", width: "100%" }}>
+                      <CalendarPlus size={14} />
+                      {scheduleState === "loading" && scheduleAction === "webinar" ? "Adding…" : "Add to Webinar List"}
+                    </button>
+                  </div>
+                )
               )}
             </div>
           </div>

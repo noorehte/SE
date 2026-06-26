@@ -17,27 +17,28 @@ export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
 
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json(getAllScheduled());
+    return NextResponse.json(await getAllScheduled().catch(() => ({})));
   }
 
   return runScheduling([]);
 }
 
 // ─── Manual POST ──────────────────────────────────────────────────────────────
-// Body: { brandId: number }
+// Body: { brandId: number, action?: "call" | "webinar" }
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const brandId: number | undefined = body.brandId;
+  const action: "call" | "webinar" | undefined = body.action;
 
   if (!brandId) {
     return NextResponse.json({ error: "brandId is required" }, { status: 400 });
   }
 
-  return runScheduling([brandId]);
+  return runScheduling([brandId], action);
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
-async function runScheduling(onlyBrandIds: number[]) {
+async function runScheduling(onlyBrandIds: number[], forceAction?: "call" | "webinar") {
   const brands = await getBrands();
 
   const candidates =
@@ -56,9 +57,9 @@ async function runScheduling(onlyBrandIds: number[]) {
 
   for (const brand of candidates) {
     const tier = brand.KIND?.toLowerCase() ?? null;
-    const isCallTier = tier !== null && CALL_TIERS.has(tier);
+    const isCallTier = forceAction === "call" || (forceAction === undefined && tier !== null && CALL_TIERS.has(tier));
 
-    if (isCallTier) {
+    if (isCallTier && forceAction !== "webinar") {
       // ── Schedule 1:1 call ────────────────────────────────────────────────
       if (!brand.SE_OWNER) {
         results.push({ brandId: brand.BRAND_ID, brandName: brand.BRAND_NAME, action: "call", success: false, error: "No SE owner assigned" });
@@ -71,7 +72,7 @@ async function runScheduling(onlyBrandIds: number[]) {
       const result = await scheduleCall(brand.SE_OWNER, brand.BRAND_NAME, contactEmails);
 
       if (result.success) {
-        await markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER, result.scheduledDate ?? "", "call");
+        await markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER, result.scheduledDate ?? "", "call").catch(() => {});
       }
 
       results.push({
@@ -91,7 +92,7 @@ async function runScheduling(onlyBrandIds: number[]) {
       );
 
       if (result.success) {
-        await markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER ?? "", new Date().toISOString(), "webinar_sheet");
+        await markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER ?? "", new Date().toISOString(), "webinar_sheet").catch(() => {});
       }
 
       results.push({

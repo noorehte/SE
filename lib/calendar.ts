@@ -22,14 +22,14 @@ export async function scheduleCall(
   }
 
   try {
-    const params = new URLSearchParams({
-      eventTitle: `Brand Call: ${brandName}`,
-      ...(contactEmails.length > 0 && { emails: contactEmails.join(",") }),
-    });
+    const body: Record<string, unknown> = { eventTitle: `Brand Call: ${brandName}` };
+    if (contactEmails.length > 0) body.emails = contactEmails.join(",");
 
-    const res = await fetch(`${url}?${params}`, {
-      method: "GET",
+    const res = await fetch(url, {
+      method: "POST",
       redirect: "follow",
+      headers: { "Content-Type": "text/plain" }, // GAS requires text/plain for doPost
+      body: JSON.stringify(body),
     });
 
     const text = await res.text();
