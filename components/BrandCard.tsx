@@ -1,6 +1,6 @@
 "use client";
 
-import { Brand, PipelineStatus } from "@/lib/metabase";
+import { Brand, PipelineStatus, WIDGET_TYPE_LABELS } from "@/lib/metabase";
 import { ExternalLink, CalendarCheck } from "lucide-react";
 import { ScheduledCall } from "./Dashboard";
 
@@ -88,13 +88,39 @@ export default function BrandCard({ brand, accent, scheduledCall }: { brand: Bra
         </span>
       </div>
 
+      {/* Widget type chips */}
+      {brand.WIDGET_TYPES.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {brand.WIDGET_TYPES.map((t) => (
+            <span key={t} className="px-1.5 py-0.5 rounded text-xs"
+              style={{ background: "rgba(114,164,191,0.12)", color: "rgba(114,164,191,0.8)", fontSize: "0.68rem" }}>
+              {WIDGET_TYPE_LABELS[t] ?? t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* CAI / CAS ready badge */}
+      {brand.CAI_IMPLEMENTATION_READY && (
+        <div className="mt-1.5">
+          <span className="px-1.5 py-0.5 rounded text-xs font-semibold"
+            style={{
+              background: brand.CAI_IMPLEMENTATION_READY === "CAI" ? "rgba(76,175,130,0.15)" : "rgba(139,127,232,0.15)",
+              color: brand.CAI_IMPLEMENTATION_READY === "CAI" ? "#4caf82" : "#8b7fe8",
+              fontSize: "0.68rem",
+            }}>
+            ✓ {brand.CAI_IMPLEMENTATION_READY} Ready
+          </span>
+        </div>
+      )}
+
       {scheduledCall && (
         <div className="flex items-center gap-1.5 mt-2" style={{ fontSize: "0.75rem", color: "#4caf82" }}>
           <CalendarCheck size={11} />
           Call {new Date(scheduledCall.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
         </div>
       )}
-      {!scheduledCall && blockingItem && (
+      {!scheduledCall && !brand.WIDGET_TYPES.length && !brand.CAI_IMPLEMENTATION_READY && blockingItem && (
         <div style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>
           {blockingItem}
         </div>

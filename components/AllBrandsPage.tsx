@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Brand, PipelineStatus } from "@/lib/metabase";
+import { Brand, PipelineStatus, WIDGET_TYPE_LABELS } from "@/lib/metabase";
 import { COLUMNS } from "./Dashboard";
 import Sidebar from "./Sidebar";
 import { Search } from "lucide-react";
@@ -13,13 +13,15 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
   const [search, setSearch] = useState("");
   const [seFilter, setSeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [widgetFilter, setWidgetFilter] = useState("all");
   const [sortKey, setSortKey] = useState<keyof Brand>("BRAND_NAME");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const filtered = brands
     .filter((b) => b.BRAND_NAME.toLowerCase().includes(search.toLowerCase()))
     .filter((b) => seFilter === "all" || b.SE_OWNER === seFilter)
-    .filter((b) => statusFilter === "all" || b.PIPELINE_STATUS === statusFilter);
+    .filter((b) => statusFilter === "all" || b.PIPELINE_STATUS === statusFilter)
+    .filter((b) => widgetFilter === "all" || b.WIDGET_TYPES.includes(widgetFilter));
 
   const sorted = [...filtered].sort((a, b) => {
     const av = a[sortKey] ?? ""; const bv = b[sortKey] ?? "";
@@ -66,6 +68,13 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
             className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(255,255,255,0.07)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)" }}>
             <option value="all">All statuses</option>
             {COLUMNS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <select value={widgetFilter} onChange={(e) => setWidgetFilter(e.target.value)}
+            className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(255,255,255,0.07)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)" }}>
+            <option value="all">All widgets</option>
+            {Object.entries(WIDGET_TYPE_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
           </select>
         </div>
 

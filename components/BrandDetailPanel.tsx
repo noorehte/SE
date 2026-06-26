@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Brand } from "@/lib/metabase";
+import { Brand, WIDGET_TYPE_LABELS } from "@/lib/metabase";
 import { COLUMNS, ScheduledCall } from "./Dashboard";
 import { X, ExternalLink, CalendarPlus, Copy, Check } from "lucide-react";
 
@@ -188,6 +188,36 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
           {/* Implementation */}
           <div className="mb-6">
             <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Implementation</div>
+
+            {/* Widget types */}
+            {brand.WIDGET_TYPES.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {brand.WIDGET_TYPES.map((t) => (
+                  <span key={t} className="px-2 py-0.5 rounded-full text-xs"
+                    style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.2)" }}>
+                    {WIDGET_TYPE_LABELS[t] ?? t}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* CAI / CAS ready */}
+            {brand.CAI_IMPLEMENTATION_READY && (
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg"
+                style={{
+                  background: brand.CAI_IMPLEMENTATION_READY === "CAI" ? "rgba(76,175,130,0.1)" : "rgba(139,127,232,0.1)",
+                  border: `1px solid ${brand.CAI_IMPLEMENTATION_READY === "CAI" ? "rgba(76,175,130,0.25)" : "rgba(139,127,232,0.25)"}`,
+                }}>
+                <span style={{ fontSize: "1rem" }}>✓</span>
+                <div>
+                  <div style={{ fontSize: "0.8rem", fontWeight: 600, color: brand.CAI_IMPLEMENTATION_READY === "CAI" ? "#4caf82" : "#8b7fe8" }}>
+                    Ready for {brand.CAI_IMPLEMENTATION_READY === "CAI" ? "Clinician AI" : "CAS"} Implementation
+                  </div>
+                  <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.35)" }}>Per Customer Success Tracker</div>
+                </div>
+              </div>
+            )}
+
             <Row
               label="Impl. call"
               value={

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Brand, PipelineStatus } from "@/lib/metabase";
+import { Brand, PipelineStatus, WIDGET_TYPE_LABELS } from "@/lib/metabase";
 import BrandCard from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
 import { LayoutGrid, List, RefreshCw } from "lucide-react";
@@ -35,13 +35,18 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   const [statFilter, setStatFilter] = useState<"all" | "in_progress" | "stuck" | "live">("all");
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const [loading, setLoading] = useState(false);
+  const [widgetTypeFilter, setWidgetTypeFilter] = useState<string | null>(null);
 
   const seFiltered = seFilter === "all" ? brands : brands.filter((b) => b.SE_OWNER === seFilter);
 
-  const filtered = statFilter === "all" ? seFiltered
+  const statFiltered = statFilter === "all" ? seFiltered
     : statFilter === "in_progress" ? seFiltered.filter(b => !["live", "was_live"].includes(b.PIPELINE_STATUS))
     : statFilter === "stuck" ? seFiltered.filter(b => b.DAYS_IN_STATUS > 7)
     : seFiltered.filter(b => b.PIPELINE_STATUS === "live");
+
+  const filtered = widgetTypeFilter
+    ? statFiltered.filter(b => b.WIDGET_TYPES.includes(widgetTypeFilter))
+    : statFiltered;
 
   const visibleBrands = columnFilter ? filtered.filter((b) => b.PIPELINE_STATUS === columnFilter) : filtered;
   const stuck = seFiltered.filter((b) => b.DAYS_IN_STATUS > 7).length;
@@ -86,8 +91,8 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
             <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>Brand portal checklist → automated status movement</p>
           </div>
           <div className="flex items-center gap-3 mt-1">
-            {(columnFilter || statFilter !== "all") && (
-              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); }}
+            {(columnFilter || statFilter !== "all" || widgetTypeFilter) && (
+              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); }}
                 className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
                 ✕ Clear filter
@@ -142,6 +147,34 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
             );
           })}
         </div>
+
+        {/* Widget type filter chips */}
+        {Object.entries(WIDGET_TYPE_LABELS).some(([key]) =>
+          seFiltered.some(b => b.WIDGET_TYPES.includes(key))
+        ) && (
+          <div className="px-8 py-3 flex items-center gap-2 flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+            <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.3)", marginRight: "4px" }}>Widget</span>
+            {Object.entries(WIDGET_TYPE_LABELS).map(([key, label]) => {
+              const count = seFiltered.filter(b => b.WIDGET_TYPES.includes(key)).length;
+              if (count === 0) return null;
+              const isActive = widgetTypeFilter === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setWidgetTypeFilter(isActive ? null : key)}
+                  className="px-3 py-1 rounded-full text-xs font-medium transition-all"
+                  style={{
+                    background: isActive ? "rgba(114,164,191,0.25)" : "rgba(255,255,255,0.07)",
+                    color: isActive ? "#72a4bf" : "rgba(255,255,255,0.5)",
+                    border: `1px solid ${isActive ? "rgba(114,164,191,0.5)" : "rgba(255,255,255,0.1)"}`,
+                  }}
+                >
+                  {label} <span style={{ opacity: 0.6 }}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-8">
