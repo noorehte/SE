@@ -260,7 +260,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
                   </div>
                 ) : scheduleState === "error" ? (
                   <div className="px-3 py-2 rounded-lg" style={{ background: "rgba(224,92,92,0.1)", color: "#e05c5c", fontSize: "0.8rem" }}>
-                    Failed — check Apps Script deployment
+                    Failed: {scheduleError ?? "check Apps Script deployment"}
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
