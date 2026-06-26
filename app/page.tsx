@@ -6,19 +6,34 @@ import Dashboard from "@/components/Dashboard";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [brands, scheduledCalls, caiEntries] = await Promise.all([
-    getBrands(),
-    Promise.resolve(getAllScheduled()),
-    getCaiReadyBrands(),
-  ]);
+  try {
+    const [brands, scheduledCalls, caiEntries] = await Promise.all([
+      getBrands(),
+      getAllScheduled().catch((e) => { console.error("getAllScheduled failed:", e); return {} as Record<string, never>; }),
+      getCaiReadyBrands(),
+    ]);
 
-  const caiLookup = buildCaiLookup(caiEntries);
-  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const caiLookup = buildCaiLookup(caiEntries);
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-  const enrichedBrands = brands.map((b) => ({
-    ...b,
-    CAI_IMPLEMENTATION_READY: caiLookup.get(normalize(b.BRAND_NAME)) ?? null,
-  }));
+    const enrichedBrands = brands.map((b) => ({
+      ...b,
+      CAI_IMPLEMENTATION_READY: caiLookup.get(normalize(b.BRAND_NAME)) ?? null,
+    }));
 
-  return <Dashboard initialBrands={enrichedBrands} initialScheduledCalls={scheduledCalls} />;
+    return <Dashboard initialBrands={enrichedBrands} initialScheduledCalls={scheduledCalls} />;
+  } catch (e) {
+    console.error("Home page error:", e);
+    return (
+      <div style={{ background: "#0d1b26", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ color: "#e05c5c", fontFamily: "monospace", fontSize: "0.9rem", maxWidth: "600px", padding: "2rem" }}>
+          <div style={{ fontWeight: 700, marginBottom: "1rem" }}>Server error — details below:</div>
+          <pre style={{ color: "rgba(255,255,255,0.6)", whiteSpace: "pre-wrap" }}>{String(e)}</pre>
+          {e instanceof Error && e.stack && (
+            <pre style={{ color: "rgba(255,255,255,0.3)", fontSize: "0.75rem", marginTop: "1rem", whiteSpace: "pre-wrap" }}>{e.stack}</pre>
+          )}
+        </div>
+      </div>
+    );
+  }
 }
