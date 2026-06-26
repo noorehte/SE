@@ -222,7 +222,13 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
               label="Impl. call"
               value={
                 scheduledCall
-                  ? <span style={{ color: "#4caf82" }}>✓ {new Date(scheduledCall.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+                  ? <span style={{ color: "#4caf82" }}>
+                      {scheduledCall.action === "webinar_sheet"
+                        ? "✓ On webinar list"
+                        : scheduledCall.callDate
+                          ? `✓ ${new Date(scheduledCall.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`
+                          : "✓ Scheduled"}
+                    </span>
                   : <span style={{ color: "rgba(255,255,255,0.3)" }}>Not scheduled</span>
               }
             />

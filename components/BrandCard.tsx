@@ -117,7 +117,11 @@ export default function BrandCard({ brand, accent, scheduledCall }: { brand: Bra
       {scheduledCall && (
         <div className="flex items-center gap-1.5 mt-2" style={{ fontSize: "0.75rem", color: "#4caf82" }}>
           <CalendarCheck size={11} />
-          Call {new Date(scheduledCall.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+          {scheduledCall.action === "webinar_sheet"
+            ? "On webinar list"
+            : scheduledCall.callDate
+              ? `Call ${new Date(scheduledCall.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+              : "Call scheduled"}
         </div>
       )}
       {!scheduledCall && !brand.WIDGET_TYPES.length && !brand.CAI_IMPLEMENTATION_READY && blockingItem && (

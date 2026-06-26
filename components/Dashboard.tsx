@@ -365,11 +365,18 @@ function TableView({
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.OPS_OWNER ?? "—"}</td>
                 <td className="px-4 py-3 font-semibold" style={{ color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.4)", fontSize: "0.875rem" }}>{brand.DAYS_IN_STATUS}d</td>
                 <td className="px-4 py-3">
-                  {scheduledCalls[String(brand.BRAND_ID)] ? (
-                    <span style={{ fontSize: "0.8rem", color: "#4caf82" }}>
-                      ✓ {new Date(scheduledCalls[String(brand.BRAND_ID)].callDate).toLocaleDateString()}
-                    </span>
-                  ) : (
+                  {scheduledCalls[String(brand.BRAND_ID)] ? (() => {
+                    const sc = scheduledCalls[String(brand.BRAND_ID)];
+                    return (
+                      <span style={{ fontSize: "0.8rem", color: "#4caf82" }}>
+                        {sc.action === "webinar_sheet"
+                          ? "✓ Webinar"
+                          : sc.callDate
+                            ? `✓ ${new Date(sc.callDate).toLocaleDateString()}`
+                            : "✓ Scheduled"}
+                      </span>
+                    );
+                  })() : (
                     <span style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.2)" }}>—</span>
                   )}
                 </td>
