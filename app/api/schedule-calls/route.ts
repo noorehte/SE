@@ -57,9 +57,9 @@ async function runScheduling(onlyBrandIds: number[], forceAction?: "call" | "web
 
   for (const brand of candidates) {
     const tier = brand.KIND?.toLowerCase() ?? null;
-    const isCallTier = forceAction === "call" || (forceAction === undefined && tier !== null && CALL_TIERS.has(tier));
+    const isCallTier = forceAction !== "webinar" && (forceAction === "call" || (tier !== null && CALL_TIERS.has(tier)));
 
-    if (isCallTier && forceAction !== "webinar") {
+    if (isCallTier) {
       // ── Schedule 1:1 call ────────────────────────────────────────────────
       if (!brand.SE_OWNER) {
         results.push({ brandId: brand.BRAND_ID, brandName: brand.BRAND_NAME, action: "call", success: false, error: "No SE owner assigned" });
