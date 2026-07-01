@@ -55,6 +55,7 @@ export interface Brand {
   PAYMENT_COMPLETED_AT: string | null;
   HAS_PENDING_BOARD_REVIEW: boolean;
   HAS_REJECTED_BY_BOARD: boolean;
+  HAS_APPROVED_PRODUCTS: boolean;
   HAS_SHARE_THRESHOLD_MET: boolean;
   KIND: string | null;
   PIPELINE_STATUS: PipelineStatus;
@@ -77,14 +78,12 @@ function computePipelineStatus(
 ): PipelineStatus | null {
   if (hasRecentWidgetViews) return "live";
   if (hasAnyWidgetViews) return "was_live";
-  // Rejected brands fall off the board
-  if (brand.HAS_REJECTED_BY_BOARD) return null;
-  // Brands with no products or still pending review don't show yet
-  if (brand.PRODUCTS_COUNT === 0 || brand.HAS_PENDING_BOARD_REVIEW) return null;
+  // Only show brands that have at least one approved product
+  if (!brand.HAS_APPROVED_PRODUCTS) return null;
   // Collab code = managed implementation path
   if (brand.COLLABORATOR_CODE) return "collaborator_code_brand";
   // Share threshold met = code snippets available for self-serve
-  if (brand.SUBMITTED_TO_MAB || brand.HAS_SHARE_THRESHOLD_MET) return "code_snippets_available";
+  if (brand.HAS_SHARE_THRESHOLD_MET) return "code_snippets_available";
   // Products approved but not yet at threshold — SE needs to book onboarding call
   return "products_approved_needs_call";
 }
@@ -165,11 +164,13 @@ export async function getBrands(): Promise<Brand[]> {
   // Product status per brand
   const pendingBoardReview = new Set<number>();
   const rejectedByBoard = new Set<number>();
+  const approvedProductBrands = new Set<number>(); // has at least one approved product
   const shareThresholdMet = new Set<number>();
   const firstThresholdDate = new Map<number, string>(); // when share threshold was first met
   for (const r of productRows) {
     if (r.STATUS === "pending_board_review") pendingBoardReview.add(r.HEALTH_BRAND_ID);
-    if (r.STATUS === "rejected_by_board") rejectedByBoard.add(r.HEALTH_BRAND_ID);
+    else if (r.STATUS === "rejected_by_board") rejectedByBoard.add(r.HEALTH_BRAND_ID);
+    else approvedProductBrands.add(r.HEALTH_BRAND_ID); // any other status = approved
     if (r.DATE_PASSED_PROVIDER_THRESHOLD) {
       shareThresholdMet.add(r.HEALTH_BRAND_ID);
       const prev = firstThresholdDate.get(r.HEALTH_BRAND_ID);
@@ -212,6 +213,7 @@ export async function getBrands(): Promise<Brand[]> {
       PAYMENT_COMPLETED_AT: null,
       HAS_PENDING_BOARD_REVIEW: pendingBoardReview.has(brandId),
       HAS_REJECTED_BY_BOARD: rejectedByBoard.has(brandId),
+      HAS_APPROVED_PRODUCTS: approvedProductBrands.has(brandId),
       HAS_SHARE_THRESHOLD_MET: shareThresholdMet.has(brandId),
       WIDGET_TYPES: Array.from(brandWidgetTypes.get(brandId) ?? []),
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
