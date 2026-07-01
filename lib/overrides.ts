@@ -48,7 +48,8 @@ export async function getAllOverrides(): Promise<Record<string, OverrideEntry>> 
   return result;
 }
 
-async function getOrCreatePage(brandId: number): Promise<{ id: string; properties: Record<string, unknown> } | null> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getOrCreatePage(brandId: number): Promise<{ id: string; properties: any } | null> {
   const data = await notionRequest(`/databases/${DB_ID}/query`, "POST", {
     filter: { property: "Brand ID", title: { equals: String(brandId) } },
     page_size: 1,
@@ -98,7 +99,8 @@ export async function setFieldOverride(brandId: number, field: string, value: st
   if (!page) return;
 
   // Read existing field overrides and merge
-  const existing = page.properties["Field Overrides"]?.rich_text?.[0]?.plain_text?.trim();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const existing = (page.properties as any)["Field Overrides"]?.rich_text?.[0]?.plain_text?.trim();
   let fields: Record<string, string> = {};
   if (existing) {
     try { fields = JSON.parse(existing); } catch { /* ignore */ }
