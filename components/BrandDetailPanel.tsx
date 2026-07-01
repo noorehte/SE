@@ -252,7 +252,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
                   <ExternalLink size={14} /> HubSpot
                 </a>
               )}
-              {(brand.PIPELINE_STATUS === "just_signed" || brand.PIPELINE_STATUS === "pending_mab_review") && (
+              {brand.PIPELINE_STATUS === "products_approved_needs_call" && (
                 scheduleState === "success" ? (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e", fontSize: "0.875rem" }}>
                     <CalendarPlus size={14} />
