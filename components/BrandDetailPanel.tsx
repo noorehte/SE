@@ -56,8 +56,8 @@ async function saveFieldOverride(brandId: number, field: string, value: string, 
 }
 
 function EditableOwner({
-  brandId, field, label, value, hubspotCompanyId,
-}: { brandId: number; field: string; label: string; value: string | null; hubspotCompanyId?: number | null }) {
+  brandId, field, label, value, hubspotCompanyId, onSaved,
+}: { brandId: number; field: string; label: string; value: string | null; hubspotCompanyId?: number | null; onSaved?: (field: string, value: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [current, setCurrent] = useState(value);
   const [saving, setSaving] = useState(false);
@@ -67,6 +67,7 @@ function EditableOwner({
     setCurrent(v);
     setEditing(false);
     await saveFieldOverride(brandId, field, v, hubspotCompanyId);
+    onSaved?.(field, v);
     setSaving(false);
   }
 
@@ -111,8 +112,8 @@ function EditableOwner({
 }
 
 function EditableSelect({
-  brandId, field, label, value, options, optionLabels, hubspotCompanyId,
-}: { brandId: number; field: string; label: string; value: string | null; options: string[]; optionLabels: Record<string, string>; hubspotCompanyId?: number | null }) {
+  brandId, field, label, value, options, optionLabels, hubspotCompanyId, onSaved,
+}: { brandId: number; field: string; label: string; value: string | null; options: string[]; optionLabels: Record<string, string>; hubspotCompanyId?: number | null; onSaved?: (field: string, value: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [current, setCurrent] = useState(value);
   const [saving, setSaving] = useState(false);
@@ -122,6 +123,7 @@ function EditableSelect({
     setCurrent(v || null);
     setEditing(false);
     await saveFieldOverride(brandId, field, v, hubspotCompanyId);
+    onSaved?.(field, v);
     setSaving(false);
   }
 
@@ -160,8 +162,8 @@ function EditableSelect({
 }
 
 function EditableText({
-  brandId, field, label, value, hubspotCompanyId,
-}: { brandId: number; field: string; label: string; value: string | null; hubspotCompanyId?: number | null }) {
+  brandId, field, label, value, hubspotCompanyId, onSaved,
+}: { brandId: number; field: string; label: string; value: string | null; hubspotCompanyId?: number | null; onSaved?: (field: string, value: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [current, setCurrent] = useState(value ?? "");
   const [saving, setSaving] = useState(false);
@@ -170,6 +172,7 @@ function EditableText({
     setSaving(true);
     setEditing(false);
     await saveFieldOverride(brandId, field, current, hubspotCompanyId);
+    onSaved?.(field, current);
     setSaving(false);
   }
 
@@ -204,7 +207,12 @@ function EditableText({
   );
 }
 
-export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { brand: Brand; scheduledCall: ScheduledCall | null; onClose: () => void }) {
+export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBrandUpdate }: {
+  brand: Brand;
+  scheduledCall: ScheduledCall | null;
+  onClose: () => void;
+  onBrandUpdate?: (brandId: number, updates: Partial<Brand>) => void;
+}) {
   const [scheduleState, setScheduleState] = useState<ScheduleState>("idle");
   const [scheduleAction, setScheduleAction] = useState<ScheduleAction | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
@@ -291,10 +299,10 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
           <div className="mb-6">
             <div className="mb-3" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Team</div>
             <div className="flex flex-col gap-3">
-              <EditableOwner brandId={brand.BRAND_ID} field="SE_OWNER" label="SE Owner" value={brand.SE_OWNER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} />
-              <EditableOwner brandId={brand.BRAND_ID} field="ACCOUNT_MANAGER" label="Account Manager" value={brand.ACCOUNT_MANAGER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} />
-              <EditableOwner brandId={brand.BRAND_ID} field="OPS_OWNER" label="Ops Owner" value={brand.OPS_OWNER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} />
-              <EditableOwner brandId={brand.BRAND_ID} field="BD_REP" label="BD Rep" value={brand.BD_REP} />
+              <EditableOwner brandId={brand.BRAND_ID} field="SE_OWNER" label="SE Owner" value={brand.SE_OWNER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { SE_OWNER: v })} />
+              <EditableOwner brandId={brand.BRAND_ID} field="ACCOUNT_MANAGER" label="Account Manager" value={brand.ACCOUNT_MANAGER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { ACCOUNT_MANAGER: v })} />
+              <EditableOwner brandId={brand.BRAND_ID} field="OPS_OWNER" label="Ops Owner" value={brand.OPS_OWNER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { OPS_OWNER: v })} />
+              <EditableOwner brandId={brand.BRAND_ID} field="BD_REP" label="BD Rep" value={brand.BD_REP} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { BD_REP: v })} />
             </div>
           </div>
 
@@ -328,6 +336,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
               brandId={brand.BRAND_ID} field="KIND" label="Segment"
               value={brand.KIND} options={SEGMENT_OPTIONS} optionLabels={SEGMENT_LABELS}
               hubspotCompanyId={brand.HUBSPOT_COMPANY_ID}
+              onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { KIND: v })}
             />
             <Row label="Days in status" value={<span style={{ color: isStuck ? "#e05c5c" : "#fff" }}>{brand.DAYS_IN_STATUS}d</span>} />
             <Row label="Created" value={new Date(brand.BRAND_CREATED_AT).toLocaleDateString()} />
@@ -397,7 +406,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
               }
             />
             <Row label="Share threshold met" value={brand.HAS_SHARE_THRESHOLD_MET ? "Yes" : "No"} />
-            <EditableText brandId={brand.BRAND_ID} field="COLLABORATOR_CODE" label="Collaborator code" value={brand.COLLABORATOR_CODE} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} />
+            <EditableText brandId={brand.BRAND_ID} field="COLLABORATOR_CODE" label="Collaborator code" value={brand.COLLABORATOR_CODE} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { COLLABORATOR_CODE: v })} />
           </div>
 
           {/* Links */}

@@ -215,6 +215,10 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
           brand={selectedBrand}
           scheduledCall={scheduledCalls[String(selectedBrand.BRAND_ID)] ?? null}
           onClose={() => setSelectedBrand(null)}
+          onBrandUpdate={(brandId, updates) => {
+            setBrands((prev) => prev.map((b) => b.BRAND_ID === brandId ? { ...b, ...updates } : b));
+            setSelectedBrand((prev) => prev && prev.BRAND_ID === brandId ? { ...prev, ...updates } : prev);
+          }}
         />
       )}
     </div>
