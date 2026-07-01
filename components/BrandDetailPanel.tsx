@@ -3,11 +3,16 @@
 import { useState, useEffect } from "react";
 import { Brand, WIDGET_TYPE_LABELS } from "@/lib/metabase";
 import { COLUMNS, ScheduledCall } from "./Dashboard";
-import { X, ExternalLink, CalendarPlus, Copy, Check } from "lucide-react";
+import { X, ExternalLink, CalendarPlus, Copy, Check, Pencil } from "lucide-react";
 
 const OWNER_INITIALS: Record<string, string> = {
   maha: "MH", noor: "NR", naumaan: "NM",
   mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK",
+};
+const OWNER_OPTIONS = ["maha", "noor", "naumaan", "mohammad", "kean", "jean", "zeke"];
+const SEGMENT_OPTIONS = ["vip", "strategic", "enterprise", "mid_market"];
+const SEGMENT_LABELS: Record<string, string> = {
+  vip: "VIP", strategic: "Strategic", enterprise: "Enterprise", mid_market: "Mid-Market",
 };
 
 function initials(name: string | null) {
@@ -41,6 +46,163 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 type ScheduleState = "idle" | "loading" | "success" | "error";
 type ScheduleAction = "call" | "webinar";
+
+async function saveFieldOverride(brandId: number, field: string, value: string, hubspotCompanyId?: number | null) {
+  await fetch("/api/field-overrides", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ brandId, field, value, hubspotCompanyId }),
+  });
+}
+
+function EditableOwner({
+  brandId, field, label, value, hubspotCompanyId,
+}: { brandId: number; field: string; label: string; value: string | null; hubspotCompanyId?: number | null }) {
+  const [editing, setEditing] = useState(false);
+  const [current, setCurrent] = useState(value);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSelect(v: string) {
+    setSaving(true);
+    setCurrent(v);
+    setEditing(false);
+    await saveFieldOverride(brandId, field, v, hubspotCompanyId);
+    setSaving(false);
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+        style={{ background: "#1e3a4f", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
+        {initials(current)}
+      </span>
+      <div className="flex-1">
+        <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+        {editing ? (
+          <select
+            autoFocus
+            value={current ?? ""}
+            onChange={(e) => handleSelect(e.target.value)}
+            onBlur={() => setEditing(false)}
+            style={{
+              background: "#0d1e2d", color: "#fff", border: "1px solid rgba(114,164,191,0.4)",
+              borderRadius: "6px", padding: "2px 6px", fontSize: "0.875rem", width: "100%",
+            }}>
+            <option value="">Unassigned</option>
+            {OWNER_OPTIONS.map((o) => (
+              <option key={o} value={o}>{o.charAt(0).toUpperCase() + o.slice(1)}</option>
+            ))}
+          </select>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <span style={{ fontSize: "0.875rem", color: current ? "#fff" : "rgba(255,255,255,0.3)" }}>
+              {current ?? "Unassigned"}
+            </span>
+            {!saving && (
+              <button onClick={() => setEditing(true)} style={{ color: "rgba(255,255,255,0.25)" }} className="hover:opacity-70">
+                <Pencil size={11} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EditableSelect({
+  brandId, field, label, value, options, optionLabels, hubspotCompanyId,
+}: { brandId: number; field: string; label: string; value: string | null; options: string[]; optionLabels: Record<string, string>; hubspotCompanyId?: number | null }) {
+  const [editing, setEditing] = useState(false);
+  const [current, setCurrent] = useState(value);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSelect(v: string) {
+    setSaving(true);
+    setCurrent(v || null);
+    setEditing(false);
+    await saveFieldOverride(brandId, field, v, hubspotCompanyId);
+    setSaving(false);
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-4 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <span style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.4)", flexShrink: 0 }}>{label}</span>
+      {editing ? (
+        <select
+          autoFocus
+          value={current ?? ""}
+          onChange={(e) => handleSelect(e.target.value)}
+          onBlur={() => setEditing(false)}
+          style={{
+            background: "#0d1e2d", color: "#fff", border: "1px solid rgba(114,164,191,0.4)",
+            borderRadius: "6px", padding: "2px 6px", fontSize: "0.875rem",
+          }}>
+          <option value="">Not set</option>
+          {options.map((o) => (
+            <option key={o} value={o}>{optionLabels[o] ?? o}</option>
+          ))}
+        </select>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <span style={{ fontSize: "0.875rem", color: current ? "#fff" : "rgba(255,255,255,0.3)", textAlign: "right" }}>
+            {current ? (optionLabels[current] ?? current) : "Not set"}
+          </span>
+          {!saving && (
+            <button onClick={() => setEditing(true)} style={{ color: "rgba(255,255,255,0.25)" }} className="hover:opacity-70">
+              <Pencil size={11} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EditableText({
+  brandId, field, label, value, hubspotCompanyId,
+}: { brandId: number; field: string; label: string; value: string | null; hubspotCompanyId?: number | null }) {
+  const [editing, setEditing] = useState(false);
+  const [current, setCurrent] = useState(value ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    setEditing(false);
+    await saveFieldOverride(brandId, field, current, hubspotCompanyId);
+    setSaving(false);
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-4 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <span style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.4)", flexShrink: 0 }}>{label}</span>
+      {editing ? (
+        <input
+          autoFocus
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+          onBlur={handleSave}
+          onKeyDown={(e) => e.key === "Enter" && handleSave()}
+          style={{
+            background: "#0d1e2d", color: "#fff", border: "1px solid rgba(114,164,191,0.4)",
+            borderRadius: "6px", padding: "2px 8px", fontSize: "0.875rem", width: "160px",
+          }}
+        />
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <span style={{ fontSize: "0.875rem", color: current ? "#fff" : "rgba(255,255,255,0.3)", textAlign: "right" }}>
+            {current || "Not set"}
+          </span>
+          {!saving && (
+            <button onClick={() => setEditing(true)} style={{ color: "rgba(255,255,255,0.25)" }} className="hover:opacity-70">
+              <Pencil size={11} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { brand: Brand; scheduledCall: ScheduledCall | null; onClose: () => void }) {
   const [scheduleState, setScheduleState] = useState<ScheduleState>("idle");
@@ -129,10 +291,10 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
           <div className="mb-6">
             <div className="mb-3" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Team</div>
             <div className="flex flex-col gap-3">
-              <Avatar name={brand.SE_OWNER} title="SE Owner" />
-              <Avatar name={brand.ACCOUNT_MANAGER} title="Account Manager" />
-              <Avatar name={brand.OPS_OWNER} title="Ops Owner" />
-              {brand.BD_REP && <Avatar name={brand.BD_REP} title="BD Rep" />}
+              <EditableOwner brandId={brand.BRAND_ID} field="SE_OWNER" label="SE Owner" value={brand.SE_OWNER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} />
+              <EditableOwner brandId={brand.BRAND_ID} field="ACCOUNT_MANAGER" label="Account Manager" value={brand.ACCOUNT_MANAGER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} />
+              <EditableOwner brandId={brand.BRAND_ID} field="OPS_OWNER" label="Ops Owner" value={brand.OPS_OWNER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} />
+              <EditableOwner brandId={brand.BRAND_ID} field="BD_REP" label="BD Rep" value={brand.BD_REP} />
             </div>
           </div>
 
@@ -162,7 +324,11 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
           {/* Pipeline */}
           <div className="mb-6">
             <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Pipeline</div>
-            <Row label="Segment" value={brand.KIND ?? "Not set"} />
+            <EditableSelect
+              brandId={brand.BRAND_ID} field="KIND" label="Segment"
+              value={brand.KIND} options={SEGMENT_OPTIONS} optionLabels={SEGMENT_LABELS}
+              hubspotCompanyId={brand.HUBSPOT_COMPANY_ID}
+            />
             <Row label="Days in status" value={<span style={{ color: isStuck ? "#e05c5c" : "#fff" }}>{brand.DAYS_IN_STATUS}d</span>} />
             <Row label="Created" value={new Date(brand.BRAND_CREATED_AT).toLocaleDateString()} />
             <Row label="Last sign-in" value={brand.ANY_ADMIN_LAST_SIGNED_IN_AT ? new Date(brand.ANY_ADMIN_LAST_SIGNED_IN_AT).toLocaleDateString() : "Never"} />
@@ -189,7 +355,6 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
           <div className="mb-6">
             <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Implementation</div>
 
-            {/* Widget types */}
             {brand.WIDGET_TYPES.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {brand.WIDGET_TYPES.map((t) => (
@@ -201,7 +366,6 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
               </div>
             )}
 
-            {/* CAI / CAS ready */}
             {brand.CAI_IMPLEMENTATION_READY && (
               <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg"
                 style={{
@@ -232,8 +396,8 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose }: { br
                   : <span style={{ color: "rgba(255,255,255,0.3)" }}>Not scheduled</span>
               }
             />
-            <Row label="Share threshold met" value={brand.SUBMITTED_TO_MAB ? "Yes" : "No"} />
-            <Row label="Collaborator code" value={brand.COLLABORATOR_CODE ?? "Not set"} />
+            <Row label="Share threshold met" value={brand.HAS_SHARE_THRESHOLD_MET ? "Yes" : "No"} />
+            <EditableText brandId={brand.BRAND_ID} field="COLLABORATOR_CODE" label="Collaborator code" value={brand.COLLABORATOR_CODE} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} />
           </div>
 
           {/* Links */}

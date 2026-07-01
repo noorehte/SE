@@ -1,6 +1,52 @@
 const HUBSPOT_API_KEY = process.env.HUBSPOT_API_KEY!;
 const BASE = "https://api.hubapi.com";
 
+// Maps our internal shortnames to HubSpot user IDs (used for enumeration properties)
+const OWNER_TO_HUBSPOT_ID: Record<string, string> = {
+  noor:     "93684249",
+  maha:     "728213976",
+  naumaan:  "161082793",
+  mohammad: "164641237",
+  kean:     "161225162",
+  jean:     "162264876",
+  zeke:     "2060158945",
+};
+
+// Maps our internal field names to HubSpot company property names + value transforms
+const FIELD_TO_HUBSPOT: Record<string, { property: string; transform?: (v: string) => string }> = {
+  SE_OWNER:        { property: "solutions_engineer" }, // string — just write the name
+  ACCOUNT_MANAGER: { property: "account_manager", transform: (v) => OWNER_TO_HUBSPOT_ID[v] ?? v },
+  OPS_OWNER:       { property: "ops_owner",        transform: (v) => OWNER_TO_HUBSPOT_ID[v] ?? v },
+  KIND:            {
+    property: "company_segment",
+    transform: (v) => ({ vip: "VIP", strategic: "Strategic", enterprise: "Enterprise", mid_market: "Mid-Market" }[v] ?? v),
+  },
+};
+
+export async function updateCompanyField(
+  hubspotCompanyId: number,
+  field: string,
+  value: string
+): Promise<void> {
+  if (!HUBSPOT_API_KEY || !hubspotCompanyId) return;
+  const mapping = FIELD_TO_HUBSPOT[field];
+  if (!mapping) return; // field not mapped to HubSpot
+
+  const hsValue = mapping.transform ? mapping.transform(value) : value;
+  try {
+    await fetch(`${BASE}/crm/v3/objects/companies/${hubspotCompanyId}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${HUBSPOT_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ properties: { [mapping.property]: hsValue } }),
+    });
+  } catch {
+    // non-fatal — Notion override still saved
+  }
+}
+
 export async function getCompanyContactEmails(hubspotCompanyId: number): Promise<string[]> {
   if (!HUBSPOT_API_KEY || !hubspotCompanyId) return [];
 

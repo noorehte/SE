@@ -206,12 +206,18 @@ export async function getBrands(): Promise<Brand[]> {
     }
   ): Brand | null {
     const stg = stgMap.get(brandId);
+    const override: OverrideEntry | undefined = overrides[String(brandId)];
+    const f = override?.fields ?? {};
     const brandWithExtra = {
       BRAND_ID: brandId,
       ...base,
+      SE_OWNER: f.SE_OWNER ?? base.SE_OWNER,
+      OPS_OWNER: f.OPS_OWNER ?? base.OPS_OWNER,
+      ACCOUNT_MANAGER: f.ACCOUNT_MANAGER ?? base.ACCOUNT_MANAGER,
+      BD_REP: f.BD_REP ?? base.BD_REP,
       HUBSPOT_COMPANY_ID: stg?.HUBSPOT_COMPANY_ID ?? null,
-      COLLABORATOR_CODE: stg?.COLLABORATOR_CODE ?? null,
-      KIND: stg?.KIND ?? null,
+      COLLABORATOR_CODE: f.COLLABORATOR_CODE ?? stg?.COLLABORATOR_CODE ?? null,
+      KIND: f.KIND ?? stg?.KIND ?? null,
       PAYMENT_COMPLETED_AT: null,
       HAS_PENDING_BOARD_REVIEW: pendingBoardReview.has(brandId),
       HAS_REJECTED_BY_BOARD: rejectedByBoard.has(brandId),
@@ -225,7 +231,6 @@ export async function getBrands(): Promise<Brand[]> {
       recentWidgetBrands.has(brandId),
       anyWidgetBrands.has(brandId)
     );
-    const override: OverrideEntry | undefined = overrides[String(brandId)];
     const pipelineStatus = override?.status ?? computedStatus;
     if (!pipelineStatus) return null; // excluded from board
     // Use the override's changedAt if set; otherwise use stage-appropriate data timestamps.
