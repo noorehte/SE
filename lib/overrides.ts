@@ -18,14 +18,25 @@ function notionRequest(path: string, method = "GET", body?: unknown) {
   }).then((r) => r.json());
 }
 
-export async function getAllOverrides(): Promise<Record<string, PipelineStatus>> {
-  const result: Record<string, PipelineStatus> = {};
+export interface OverrideEntry {
+  status: PipelineStatus;
+  changedAt: string; // ISO timestamp of when status was last set
+}
+
+export async function getAllOverrides(): Promise<Record<string, OverrideEntry>> {
+  const result: Record<string, OverrideEntry> = {};
   try {
     const data = await notionRequest(`/databases/${DB_ID}/query`, "POST", { page_size: 100 });
     for (const page of data.results ?? []) {
       const brandId = page.properties["Brand ID"]?.title?.[0]?.plain_text?.trim();
       const status = page.properties["Status"]?.rich_text?.[0]?.plain_text?.trim();
-      if (brandId && status) result[brandId] = status as PipelineStatus;
+      const changedAt = page.properties["Status Changed At"]?.rich_text?.[0]?.plain_text?.trim();
+      if (brandId && status) {
+        result[brandId] = {
+          status: status as PipelineStatus,
+          changedAt: changedAt ?? page.created_time ?? new Date().toISOString(),
+        };
+      }
     }
   } catch {
     // return empty on error — non-fatal
@@ -34,14 +45,22 @@ export async function getAllOverrides(): Promise<Record<string, PipelineStatus>>
 }
 
 export async function setOverride(brandId: number, status: PipelineStatus): Promise<void> {
+  const now = new Date().toISOString();
   const data = await notionRequest(`/databases/${DB_ID}/query`, "POST", {
     filter: { property: "Brand ID", title: { equals: String(brandId) } },
     page_size: 1,
   });
   const existing = data.results?.[0];
   if (existing) {
+    // Only reset changedAt if the status actually changed
+    const currentStatus = existing.properties["Status"]?.rich_text?.[0]?.plain_text?.trim();
+    const changedAt = currentStatus !== status ? now
+      : (existing.properties["Status Changed At"]?.rich_text?.[0]?.plain_text?.trim() ?? now);
     await notionRequest(`/pages/${existing.id}`, "PATCH", {
-      properties: { "Status": { rich_text: [{ text: { content: status } }] } },
+      properties: {
+        "Status": { rich_text: [{ text: { content: status } }] },
+        "Status Changed At": { rich_text: [{ text: { content: changedAt } }] },
+      },
     });
   } else {
     await notionRequest("/pages", "POST", {
@@ -49,6 +68,7 @@ export async function setOverride(brandId: number, status: PipelineStatus): Prom
       properties: {
         "Brand ID": { title: [{ text: { content: String(brandId) } }] },
         "Status": { rich_text: [{ text: { content: status } }] },
+        "Status Changed At": { rich_text: [{ text: { content: now } }] },
       },
     });
   }

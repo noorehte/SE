@@ -1,4 +1,4 @@
-import { getAllOverrides } from "@/lib/overrides";
+import { getAllOverrides, OverrideEntry } from "@/lib/overrides";
 
 const METABASE_URL = process.env.METABASE_URL!;
 const METABASE_API_KEY = process.env.METABASE_API_KEY!;
@@ -64,10 +64,9 @@ export interface Brand {
 }
 
 export type PipelineStatus =
-  | "just_signed"
-  | "pending_mab_review"
-  | "products_rejected"
+  | "products_approved_needs_call"
   | "code_snippets_available"
+  | "collaborator_code_brand"
   | "live"
   | "was_live";
 
@@ -75,13 +74,19 @@ function computePipelineStatus(
   brand: Omit<Brand, "PIPELINE_STATUS" | "DAYS_IN_STATUS">,
   hasRecentWidgetViews: boolean,
   hasAnyWidgetViews: boolean
-): PipelineStatus {
+): PipelineStatus | null {
   if (hasRecentWidgetViews) return "live";
   if (hasAnyWidgetViews) return "was_live";
-  if (brand.HAS_REJECTED_BY_BOARD) return "products_rejected";
-  if (brand.HAS_PENDING_BOARD_REVIEW) return "pending_mab_review";
-  if (brand.SUBMITTED_TO_MAB) return "code_snippets_available";
-  return "just_signed";
+  // Rejected brands fall off the board
+  if (brand.HAS_REJECTED_BY_BOARD) return null;
+  // Brands with no products or still pending review don't show yet
+  if (brand.PRODUCTS_COUNT === 0 || brand.HAS_PENDING_BOARD_REVIEW) return null;
+  // Collab code = managed implementation path
+  if (brand.COLLABORATOR_CODE) return "collaborator_code_brand";
+  // Share threshold met = code snippets available for self-serve
+  if (brand.SUBMITTED_TO_MAB || brand.HAS_SHARE_THRESHOLD_MET) return "code_snippets_available";
+  // Products approved but not yet at threshold — SE needs to book onboarding call
+  return "products_approved_needs_call";
 }
 
 export async function getBrands(): Promise<Brand[]> {
@@ -167,7 +172,7 @@ export async function getBrands(): Promise<Brand[]> {
 
   function buildBrand(
     brandId: number,
-    base: {
+    base: { // returns null if brand should be excluded from the board
       BRAND_NAME: string;
       SE_OWNER: string | null;
       OPS_OWNER: string | null;
@@ -183,7 +188,7 @@ export async function getBrands(): Promise<Brand[]> {
       HAS_PAYMENT_METHOD: boolean;
       SUBMITTED_TO_MAB: boolean;
     }
-  ): Brand {
+  ): Brand | null {
     const stg = stgMap.get(brandId);
     const brandWithExtra = {
       BRAND_ID: brandId,
@@ -203,14 +208,19 @@ export async function getBrands(): Promise<Brand[]> {
       recentWidgetBrands.has(brandId),
       anyWidgetBrands.has(brandId)
     );
-    const pipelineStatus = overrides[String(brandId)] ?? computedStatus;
-    const createdAt = new Date(base.BRAND_CREATED_AT).getTime();
-    const daysInStatus = Math.floor((now - createdAt) / (1000 * 60 * 60 * 24));
+    const override: OverrideEntry | undefined = overrides[String(brandId)];
+    const pipelineStatus = override?.status ?? computedStatus;
+    if (!pipelineStatus) return null; // excluded from board
+    // Use the override's changedAt timestamp if available; otherwise fall back to brand creation date
+    const statusEnteredAt = override?.changedAt
+      ? new Date(override.changedAt).getTime()
+      : new Date(base.BRAND_CREATED_AT).getTime();
+    const daysInStatus = Math.floor((now - statusEnteredAt) / (1000 * 60 * 60 * 24));
     return { ...brandWithExtra, PIPELINE_STATUS: pipelineStatus, DAYS_IN_STATUS: daysInStatus };
   }
 
   // Brands from FCT_BRAND_ONBOARDING
-  const result: Brand[] = onboardingRows.map((r: {
+  const result: Brand[] = (onboardingRows.map((r: {
     BRAND_ID: number; BRAND_NAME: string; SE_OWNER: string | null; OPS_OWNER: string | null;
     ACCOUNT_MANAGER: string | null; BD_REP: string | null; BRAND_CREATED_AT: string;
     ANY_ADMIN_LAST_SIGNED_IN_AT: string | null; PRODUCTS_COUNT: number; REVIEWS_REQUESTED: number;
@@ -231,30 +241,9 @@ export async function getBrands(): Promise<Brand[]> {
     HAS_CA_READY: r.HAS_CA_READY,
     HAS_PAYMENT_METHOD: r.HAS_PAYMENT_METHOD,
     SUBMITTED_TO_MAB: r.SUBMITTED_TO_MAB,
-  }));
+  })) as (Brand | null)[]).filter((b): b is Brand => b !== null);
 
-  // Add rejected brands not in FCT_BRAND_ONBOARDING
-  for (const brandId of rejectedByBoard) {
-    if (onboardingIds.has(brandId)) continue;
-    const stg = stgMap.get(brandId);
-    if (!stg) continue;
-    result.push(buildBrand(brandId, {
-      BRAND_NAME: stg.NAME,
-      SE_OWNER: stg.SE_OWNER,
-      OPS_OWNER: stg.OPS_OWNER,
-      ACCOUNT_MANAGER: stg.ACCOUNT_MANAGER,
-      BD_REP: null,
-      BRAND_CREATED_AT: stg.CREATED_AT,
-      ANY_ADMIN_LAST_SIGNED_IN_AT: null,
-      PRODUCTS_COUNT: 0,
-      REVIEWS_REQUESTED: 0,
-      HAS_REVIEWS_READY: false,
-      CA_REQUESTED: 0,
-      HAS_CA_READY: false,
-      HAS_PAYMENT_METHOD: false,
-      SUBMITTED_TO_MAB: false,
-    }));
-  }
+  // Rejected brands fall off the board — no longer added here
 
   return result;
 }
