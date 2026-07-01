@@ -5,10 +5,9 @@ import { ExternalLink, CalendarCheck } from "lucide-react";
 import { ScheduledCall } from "./Dashboard";
 
 const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
-  just_signed: "Awaiting MAB product review",
-  pending_mab_review: "Products pending board review",
-  products_rejected: "Products rejected by board",
-  code_snippets_available: "Awaiting go-live",
+  products_approved_needs_call: "Book onboarding call",
+  code_snippets_available: "Awaiting implementation",
+  collaborator_code_brand: "SE implementing",
   live: null,
   was_live: "Re-activation needed",
 };
