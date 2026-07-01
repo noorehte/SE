@@ -149,10 +149,16 @@ export async function getBrands(): Promise<Brand[]> {
   const recentWidgetBrands = new Set<number>();
   const anyWidgetBrands = new Set<number>();
   const brandWidgetTypes = new Map<number, Set<string>>();
+  const firstWidgetViewDate = new Map<number, string>(); // earliest date with views
+  const lastWidgetViewDate = new Map<number, string>();  // most recent date with views
   for (const r of widgetRows) {
     if (r.VIEWS > 0) {
       anyWidgetBrands.add(r.BRAND_ID);
       if (r.DAY >= thirtyDaysAgo) recentWidgetBrands.add(r.BRAND_ID);
+      const prev = firstWidgetViewDate.get(r.BRAND_ID);
+      if (!prev || r.DAY < prev) firstWidgetViewDate.set(r.BRAND_ID, r.DAY);
+      const prevLast = lastWidgetViewDate.get(r.BRAND_ID);
+      if (!prevLast || r.DAY > prevLast) lastWidgetViewDate.set(r.BRAND_ID, r.DAY);
     }
   }
 
@@ -160,10 +166,17 @@ export async function getBrands(): Promise<Brand[]> {
   const pendingBoardReview = new Set<number>();
   const rejectedByBoard = new Set<number>();
   const shareThresholdMet = new Set<number>();
+  const firstThresholdDate = new Map<number, string>(); // when share threshold was first met
   for (const r of productRows) {
     if (r.STATUS === "pending_board_review") pendingBoardReview.add(r.HEALTH_BRAND_ID);
     if (r.STATUS === "rejected_by_board") rejectedByBoard.add(r.HEALTH_BRAND_ID);
-    if (r.DATE_PASSED_PROVIDER_THRESHOLD) shareThresholdMet.add(r.HEALTH_BRAND_ID);
+    if (r.DATE_PASSED_PROVIDER_THRESHOLD) {
+      shareThresholdMet.add(r.HEALTH_BRAND_ID);
+      const prev = firstThresholdDate.get(r.HEALTH_BRAND_ID);
+      if (!prev || r.DATE_PASSED_PROVIDER_THRESHOLD < prev) {
+        firstThresholdDate.set(r.HEALTH_BRAND_ID, r.DATE_PASSED_PROVIDER_THRESHOLD);
+      }
+    }
   }
 
   const now = Date.now();
@@ -211,10 +224,28 @@ export async function getBrands(): Promise<Brand[]> {
     const override: OverrideEntry | undefined = overrides[String(brandId)];
     const pipelineStatus = override?.status ?? computedStatus;
     if (!pipelineStatus) return null; // excluded from board
-    // Use the override's changedAt timestamp if available; otherwise fall back to brand creation date
-    const statusEnteredAt = override?.changedAt
-      ? new Date(override.changedAt).getTime()
-      : new Date(base.BRAND_CREATED_AT).getTime();
+    // Use the override's changedAt if set; otherwise use stage-appropriate data timestamps.
+    // Falling back to BRAND_CREATED_AT is wrong — a brand can be months old but just entered a stage.
+    let statusEnteredAt: number;
+    if (override?.changedAt) {
+      statusEnteredAt = new Date(override.changedAt).getTime();
+    } else if (pipelineStatus === "live") {
+      // "Live" since first widget views appeared
+      const d = firstWidgetViewDate.get(brandId);
+      statusEnteredAt = d ? new Date(d).getTime() : now;
+    } else if (pipelineStatus === "was_live") {
+      // "Was live" since last widget views (roughly when activity stopped)
+      const d = lastWidgetViewDate.get(brandId);
+      statusEnteredAt = d ? new Date(d).getTime() : now;
+    } else if (pipelineStatus === "code_snippets_available") {
+      // "Code snippets" since share threshold was first met
+      const d = firstThresholdDate.get(brandId);
+      statusEnteredAt = d ? new Date(d).getTime() : now;
+    } else {
+      // products_approved_needs_call / collaborator_code_brand — no natural timestamp in our data.
+      // Default to now (0 days) rather than misleading creation date.
+      statusEnteredAt = now;
+    }
     const daysInStatus = Math.floor((now - statusEnteredAt) / (1000 * 60 * 60 * 24));
     return { ...brandWithExtra, PIPELINE_STATUS: pipelineStatus, DAYS_IN_STATUS: daysInStatus };
   }
