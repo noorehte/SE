@@ -78,8 +78,10 @@ function computePipelineStatus(
 ): PipelineStatus | null {
   if (hasRecentWidgetViews) return "live";
   if (hasAnyWidgetViews) return "was_live";
-  // Only show brands that have at least one approved product
-  if (!brand.HAS_APPROVED_PRODUCTS) return null;
+  // No products yet — nothing to work with
+  if (brand.PRODUCTS_COUNT === 0) return null;
+  // All products still pending — wait until at least one clears review
+  if (brand.HAS_PENDING_BOARD_REVIEW && !brand.HAS_APPROVED_PRODUCTS) return null;
   // Collab code = managed implementation path
   if (brand.COLLABORATOR_CODE) return "collaborator_code_brand";
   // Share threshold met = code snippets available for self-serve
