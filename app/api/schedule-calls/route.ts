@@ -44,7 +44,7 @@ async function runScheduling(onlyBrandIds: number[], forceAction?: "call" | "web
   const candidates =
     onlyBrandIds.length > 0
       ? brands.filter((b) => onlyBrandIds.includes(b.BRAND_ID))
-      : await Promise.all(brands.map(async (b) => ({ brand: b, skip: b.PIPELINE_STATUS !== "just_signed" || await isScheduled(b.BRAND_ID) }))).then(results => results.filter(r => !r.skip).map(r => r.brand));
+      : await Promise.all(brands.map(async (b) => ({ brand: b, skip: b.PIPELINE_STATUS !== "products_approved_needs_call" || await isScheduled(b.BRAND_ID) }))).then(results => results.filter(r => !r.skip).map(r => r.brand));
 
   // Only check closed-won status on manual button press, not cron
   let wonCandidates = candidates;
