@@ -82,8 +82,7 @@ function computePipelineStatus(
   if (brand.PRODUCTS_COUNT === 0) return null;
   // All products still pending — wait until at least one clears review
   if (brand.HAS_PENDING_BOARD_REVIEW && !brand.HAS_APPROVED_PRODUCTS) return null;
-  // Collab code = managed implementation path
-  if (brand.COLLABORATOR_CODE) return "collaborator_code_brand";
+  // "collaborator_code_brand" is set manually via Notion override — no auto-detect
   // Share threshold met = code snippets available for self-serve
   if (brand.HAS_SHARE_THRESHOLD_MET) return "code_snippets_available";
   // Products approved but not yet at threshold — SE needs to book onboarding call
