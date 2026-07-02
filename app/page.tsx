@@ -24,11 +24,18 @@ export default async function Home() {
     return <Dashboard initialBrands={enrichedBrands} initialScheduledCalls={scheduledCalls} />;
   } catch (e) {
     console.error("Home page error:", e);
+    const envCheck = {
+      METABASE_URL: process.env.METABASE_URL ? `${process.env.METABASE_URL.slice(0, 15)}...` : "MISSING",
+      METABASE_API_KEY: process.env.METABASE_API_KEY ? "SET" : "MISSING",
+      NOTION_TOKEN: process.env.NOTION_TOKEN ? "SET" : "MISSING",
+    };
     return (
       <div style={{ background: "#0d1b26", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ color: "#e05c5c", fontFamily: "monospace", fontSize: "0.9rem", maxWidth: "600px", padding: "2rem" }}>
           <div style={{ fontWeight: 700, marginBottom: "1rem" }}>Server error — details below:</div>
           <pre style={{ color: "rgba(255,255,255,0.6)", whiteSpace: "pre-wrap" }}>{String(e)}</pre>
+          <div style={{ marginTop: "1.5rem", color: "#e9a84c", fontWeight: 700 }}>Env vars at runtime:</div>
+          <pre style={{ color: "rgba(255,255,255,0.5)", marginTop: "0.5rem" }}>{JSON.stringify(envCheck, null, 2)}</pre>
           {e instanceof Error && e.stack && (
             <pre style={{ color: "rgba(255,255,255,0.3)", fontSize: "0.75rem", marginTop: "1rem", whiteSpace: "pre-wrap" }}>{e.stack}</pre>
           )}
