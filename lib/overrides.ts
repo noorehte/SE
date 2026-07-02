@@ -1,11 +1,12 @@
 // Notion-based pipeline status overrides — no fs dependency, safe for Vercel
 import { PipelineStatus } from "./metabase";
 
-const NOTION_TOKEN = process.env.NOTION_TOKEN!;
 const DB_ID = "a2925a747bac4f26a591fa0fa9035380";
 const BASE = "https://api.notion.com/v1";
 
 async function notionRequest(path: string, method = "GET", body?: unknown) {
+  // Read at request time — module-level access gets baked in as undefined for Sensitive vars
+  const NOTION_TOKEN = process.env.NOTION_TOKEN!;
   const r = await fetch(`${BASE}${path}`, {
     method,
     headers: {

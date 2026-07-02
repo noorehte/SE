@@ -1,9 +1,10 @@
 import { getAllOverrides, OverrideEntry } from "@/lib/overrides";
 
-const METABASE_URL = process.env.METABASE_URL!;
-const METABASE_API_KEY = process.env.METABASE_API_KEY!;
-
 async function metabaseQuery(tableId: number, fields?: number[], filters?: unknown[]) {
+  // Read at request time — module-level access gets baked in as undefined for Sensitive vars
+  const METABASE_URL = process.env.METABASE_URL!;
+  const METABASE_API_KEY = process.env.METABASE_API_KEY!;
+
   const query: Record<string, unknown> = { "source-table": tableId };
   if (fields) query["fields"] = fields.map((id) => ["field", id, null]);
   if (filters) query["filter"] = filters;

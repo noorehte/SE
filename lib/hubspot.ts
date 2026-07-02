@@ -1,4 +1,5 @@
-const HUBSPOT_API_KEY = process.env.HUBSPOT_API_KEY!;
+// Read at request time — module-level access gets baked in as undefined for Sensitive vars
+const getKey = () => process.env.getKey()!;
 const BASE = "https://api.hubapi.com";
 
 // Maps our internal shortnames to HubSpot user IDs (used for enumeration properties)
@@ -28,7 +29,7 @@ export async function updateCompanyField(
   field: string,
   value: string
 ): Promise<void> {
-  if (!HUBSPOT_API_KEY || !hubspotCompanyId) return;
+  if (!getKey() || !hubspotCompanyId) return;
   const mapping = FIELD_TO_HUBSPOT[field];
   if (!mapping) return; // field not mapped to HubSpot
 
@@ -37,7 +38,7 @@ export async function updateCompanyField(
     await fetch(`${BASE}/crm/v3/objects/companies/${hubspotCompanyId}`, {
       method: "PATCH",
       headers: {
-        Authorization: `Bearer ${HUBSPOT_API_KEY}`,
+        Authorization: `Bearer ${getKey()}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ properties: { [mapping.property]: hsValue } }),
@@ -48,13 +49,13 @@ export async function updateCompanyField(
 }
 
 export async function getCompanyContactEmails(hubspotCompanyId: number): Promise<string[]> {
-  if (!HUBSPOT_API_KEY || !hubspotCompanyId) return [];
+  if (!getKey() || !hubspotCompanyId) return [];
 
   try {
     // Step 1: get associated contact IDs
     const assocRes = await fetch(
       `${BASE}/crm/v4/objects/companies/${hubspotCompanyId}/associations/contact`,
-      { headers: { Authorization: `Bearer ${HUBSPOT_API_KEY}` } }
+      { headers: { Authorization: `Bearer ${getKey()}` } }
     );
     if (!assocRes.ok) return [];
     const assocData = await assocRes.json();
@@ -65,7 +66,7 @@ export async function getCompanyContactEmails(hubspotCompanyId: number): Promise
     const batchRes = await fetch(`${BASE}/crm/v3/objects/contacts/batch/read`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${HUBSPOT_API_KEY}`,
+        Authorization: `Bearer ${getKey()}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -87,12 +88,12 @@ export async function getCompanyContactEmails(hubspotCompanyId: number): Promise
 // Returns true if the company has at least one "Closed Won" deal in HubSpot.
 // Fails open (returns true) if there's no HubSpot ID or the API call fails.
 export async function isCompanyClosedWon(hubspotCompanyId: number): Promise<boolean> {
-  if (!HUBSPOT_API_KEY || !hubspotCompanyId) return true;
+  if (!getKey() || !hubspotCompanyId) return true;
 
   try {
     const assocRes = await fetch(
       `${BASE}/crm/v4/objects/companies/${hubspotCompanyId}/associations/deal`,
-      { headers: { Authorization: `Bearer ${HUBSPOT_API_KEY}` } }
+      { headers: { Authorization: `Bearer ${getKey()}` } }
     );
     if (!assocRes.ok) return true;
     const assocData = await assocRes.json();
@@ -101,7 +102,7 @@ export async function isCompanyClosedWon(hubspotCompanyId: number): Promise<bool
 
     const batchRes = await fetch(`${BASE}/crm/v3/objects/deals/batch/read`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${HUBSPOT_API_KEY}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         properties: ["dealstage"],
         inputs: dealIds.map((id) => ({ id })),
