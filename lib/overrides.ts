@@ -5,8 +5,8 @@ const NOTION_TOKEN = process.env.NOTION_TOKEN!;
 const DB_ID = "a2925a747bac4f26a591fa0fa9035380";
 const BASE = "https://api.notion.com/v1";
 
-function notionRequest(path: string, method = "GET", body?: unknown) {
-  return fetch(`${BASE}${path}`, {
+async function notionRequest(path: string, method = "GET", body?: unknown) {
+  const r = await fetch(`${BASE}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${NOTION_TOKEN}`,
@@ -15,7 +15,12 @@ function notionRequest(path: string, method = "GET", body?: unknown) {
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
     cache: "no-store",
-  }).then((r) => r.json());
+  });
+  const data = await r.json();
+  if (data.object === "error") {
+    throw new Error(`Notion error ${data.status}: ${data.message}`);
+  }
+  return data;
 }
 
 export interface OverrideEntry {

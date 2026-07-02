@@ -47,12 +47,19 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 type ScheduleState = "idle" | "loading" | "success" | "error";
 type ScheduleAction = "call" | "webinar";
 
-async function saveFieldOverride(brandId: number, field: string, value: string, hubspotCompanyId?: number | null) {
-  await fetch("/api/field-overrides", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ brandId, field, value, hubspotCompanyId }),
-  });
+async function saveFieldOverride(brandId: number, field: string, value: string, hubspotCompanyId?: number | null): Promise<string | null> {
+  try {
+    const res = await fetch("/api/field-overrides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brandId, field, value, hubspotCompanyId }),
+    });
+    const data = await res.json();
+    if (!data.ok) return data.errors?.join("; ") ?? "Save failed";
+    return null;
+  } catch (e) {
+    return String(e);
+  }
 }
 
 function EditableOwner({
@@ -61,13 +68,15 @@ function EditableOwner({
   const [editing, setEditing] = useState(false);
   const [current, setCurrent] = useState(value);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   async function handleSelect(v: string) {
     setSaving(true);
+    setSaveError(null);
     setCurrent(v);
     setEditing(false);
-    await saveFieldOverride(brandId, field, v, hubspotCompanyId);
-    onSaved?.(field, v);
+    const err = await saveFieldOverride(brandId, field, v, hubspotCompanyId);
+    if (err) { setSaveError(err); } else { onSaved?.(field, v); }
     setSaving(false);
   }
 
@@ -99,7 +108,11 @@ function EditableOwner({
             <span style={{ fontSize: "0.875rem", color: current ? "#fff" : "rgba(255,255,255,0.3)" }}>
               {current ?? "Unassigned"}
             </span>
-            {!saving && (
+            {saving ? (
+              <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)" }}>saving…</span>
+            ) : saveError ? (
+              <span title={saveError} style={{ fontSize: "0.7rem", color: "#e05c5c", cursor: "help" }}>✗ not saved</span>
+            ) : (
               <button onClick={() => setEditing(true)} style={{ color: "rgba(255,255,255,0.25)" }} className="hover:opacity-70">
                 <Pencil size={11} />
               </button>
@@ -117,13 +130,15 @@ function EditableSelect({
   const [editing, setEditing] = useState(false);
   const [current, setCurrent] = useState(value);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   async function handleSelect(v: string) {
     setSaving(true);
+    setSaveError(null);
     setCurrent(v || null);
     setEditing(false);
-    await saveFieldOverride(brandId, field, v, hubspotCompanyId);
-    onSaved?.(field, v);
+    const err = await saveFieldOverride(brandId, field, v, hubspotCompanyId);
+    if (err) { setSaveError(err); } else { onSaved?.(field, v); }
     setSaving(false);
   }
 
@@ -150,7 +165,11 @@ function EditableSelect({
           <span style={{ fontSize: "0.875rem", color: current ? "#fff" : "rgba(255,255,255,0.3)", textAlign: "right" }}>
             {current ? (optionLabels[current] ?? current) : "Not set"}
           </span>
-          {!saving && (
+          {saving ? (
+            <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)" }}>saving…</span>
+          ) : saveError ? (
+            <span title={saveError} style={{ fontSize: "0.7rem", color: "#e05c5c", cursor: "help" }}>✗ not saved</span>
+          ) : (
             <button onClick={() => setEditing(true)} style={{ color: "rgba(255,255,255,0.25)" }} className="hover:opacity-70">
               <Pencil size={11} />
             </button>
@@ -167,12 +186,14 @@ function EditableText({
   const [editing, setEditing] = useState(false);
   const [current, setCurrent] = useState(value ?? "");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   async function handleSave() {
     setSaving(true);
+    setSaveError(null);
     setEditing(false);
-    await saveFieldOverride(brandId, field, current, hubspotCompanyId);
-    onSaved?.(field, current);
+    const err = await saveFieldOverride(brandId, field, current, hubspotCompanyId);
+    if (err) { setSaveError(err); } else { onSaved?.(field, current); }
     setSaving(false);
   }
 
@@ -196,7 +217,11 @@ function EditableText({
           <span style={{ fontSize: "0.875rem", color: current ? "#fff" : "rgba(255,255,255,0.3)", textAlign: "right" }}>
             {current || "Not set"}
           </span>
-          {!saving && (
+          {saving ? (
+            <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)" }}>saving…</span>
+          ) : saveError ? (
+            <span title={saveError} style={{ fontSize: "0.7rem", color: "#e05c5c", cursor: "help" }}>✗ not saved</span>
+          ) : (
             <button onClick={() => setEditing(true)} style={{ color: "rgba(255,255,255,0.25)" }} className="hover:opacity-70">
               <Pencil size={11} />
             </button>
