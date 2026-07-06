@@ -65,6 +65,7 @@ async function runScheduling(onlyBrandIds: number[], forceAction?: "call" | "web
     success: boolean;
     callDate?: string;
     error?: string;
+    authUrl?: string;
   }[] = [];
 
   for (const brand of wonCandidates) {
@@ -94,6 +95,7 @@ async function runScheduling(onlyBrandIds: number[], forceAction?: "call" | "web
         success: result.success,
         callDate: result.scheduledDate,
         error: result.error,
+        authUrl: result.authUrl,
       });
     } else {
       // ── Add to webinar sheet ─────────────────────────────────────────────

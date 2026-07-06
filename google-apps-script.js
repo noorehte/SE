@@ -1,6 +1,26 @@
 /**
- * Updated Google Apps Script — SE Brand Call Scheduling
+ * DEPRECATED — SE Brand Call Scheduling (Apps Script version)
  *
+ * This file is no longer used. Call scheduling has been rewritten to use real
+ * Google OAuth ("Sign in with Google") instead of a personal Apps Script
+ * deployment per SE. See:
+ *   - lib/google-auth.ts   (OAuth client + token storage)
+ *   - lib/calendar.ts      (slot-finding + event creation, ported from findSlot() below)
+ *   - lib/gmail.ts         (Gmail draft creation, ported from GmailApp.createDraft() below)
+ *   - app/api/auth/google/login, .../callback, .../status
+ *
+ * Reason for the change: this script required each SE to manually re-run and
+ * re-deploy it in the Apps Script editor every time a new scope (e.g. Gmail)
+ * was added, which was error-prone and caused repeated "Authorization is
+ * required" failures in production. Each SE now just visits /api/auth/google/login
+ * once (or clicks "Connect" in the SE pipeline dashboard) and everything —
+ * including the daily cron — works off the resulting refresh token with no
+ * further manual steps.
+ *
+ * Kept here for reference only. Safe to delete once the OAuth flow has been
+ * verified in production for a couple of weeks.
+ *
+ * ---- Original header ----
  * SETUP (repeat for all 4 SE scripts):
  * 1. Open your Google Apps Script project
  * 2. Replace the entire existing code with this file

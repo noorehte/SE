@@ -241,6 +241,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
   const [scheduleState, setScheduleState] = useState<ScheduleState>("idle");
   const [scheduleAction, setScheduleAction] = useState<ScheduleAction | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleAuthUrl, setScheduleAuthUrl] = useState<string | null>(null);
   const [contacts, setContacts] = useState<string[]>([]);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
 
@@ -261,6 +262,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
     setScheduleState("loading");
     setScheduleAction(action);
     setScheduleError(null);
+    setScheduleAuthUrl(null);
     try {
       const res = await fetch("/api/schedule-calls", {
         method: "POST",
@@ -274,6 +276,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
       } else {
         setScheduleState("error");
         setScheduleError(result?.error ?? "Unknown error");
+        setScheduleAuthUrl(result?.authUrl ?? null);
       }
     } catch (err) {
       setScheduleState("error");
@@ -457,8 +460,19 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
                     {scheduleAction === "call" ? "Call scheduled ✓" : "Added to webinar list ✓"}
                   </div>
                 ) : scheduleState === "error" ? (
-                  <div className="px-3 py-2 rounded-lg" style={{ background: "rgba(224,92,92,0.1)", color: "#e05c5c", fontSize: "0.8rem" }}>
-                    Failed: {scheduleError ?? "check Apps Script deployment"}
+                  <div className="flex flex-col gap-2">
+                    <div className="px-3 py-2 rounded-lg" style={{ background: "rgba(224,92,92,0.1)", color: "#e05c5c", fontSize: "0.8rem" }}>
+                      Failed: {scheduleError ?? "Unknown error"}
+                    </div>
+                    {scheduleAuthUrl && (
+                      <a
+                        href={scheduleAuthUrl}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg hover:opacity-80 transition-opacity"
+                        style={{ background: "rgba(114,164,191,0.1)", color: "#72a4bf", fontSize: "0.875rem" }}
+                      >
+                        <ExternalLink size={14} /> Connect Google Account
+                      </a>
+                    )}
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">

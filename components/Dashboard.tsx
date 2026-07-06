@@ -6,6 +6,7 @@ import BrandCard from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
 import { LayoutGrid, List, RefreshCw } from "lucide-react";
 import Sidebar from "./Sidebar";
+import GoogleConnectStatus from "./GoogleConnectStatus";
 
 export interface ScheduledCall {
   brandId: number;
@@ -91,6 +92,7 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
             <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>Brand portal checklist → automated status movement</p>
           </div>
           <div className="flex items-center gap-3 mt-1">
+            <GoogleConnectStatus />
             {(columnFilter || statFilter !== "all" || widgetTypeFilter) && (
               <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); }}
                 className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
