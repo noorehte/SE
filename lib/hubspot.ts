@@ -1,5 +1,5 @@
 // Read at request time — module-level access gets baked in as undefined for Sensitive vars
-const getKey = () => process.env.getKey()!;
+const getKey = () => process.env.HUBSPOT_API_KEY!;
 const BASE = "https://api.hubapi.com";
 
 // Maps our internal shortnames to HubSpot user IDs (used for enumeration properties)
