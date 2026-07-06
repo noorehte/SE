@@ -15,11 +15,12 @@ import { google } from "googleapis";
 import { DateTime } from "luxon";
 import { getAuthorizedClient } from "@/lib/google-auth";
 import { createGmailDraft } from "@/lib/gmail";
+import { getSEInfo } from "@/lib/se-info";
+import { buildOnboardingCallEmail } from "@/lib/email-templates";
 
 type OAuth2Client = InstanceType<typeof google.auth.OAuth2>;
 
 const TIMEZONE = "America/Los_Angeles";
-const WEBINAR_LINK = "https://app.livestorm.co/frontrowmd/frontrowmd-implementation?s=fec605b5-8947-43eb-8a43-dd136b08eaed";
 const MAX_EVENTS_PER_DAY = 6;
 const BUSINESS_START_HOUR = 9;
 const BUSINESS_END_HOUR = 16;
@@ -165,15 +166,15 @@ export async function scheduleCall(
       new Set(contactEmails.map((e) => e.trim()).filter((e) => e.includes("@")))
     );
 
+    // Intentionally no `attendees` here — the SE adds contacts to the calendar
+    // invite themselves once they've reviewed the draft email below.
     const calendar = google.calendar({ version: "v3", auth });
     await calendar.events.insert({
       calendarId: "primary",
-      sendUpdates: "all",
       requestBody: {
         summary: `Brand Call: ${brandName}`,
         start: { dateTime: slot.start.toISOString(), timeZone: TIMEZONE },
         end: { dateTime: slot.end.toISOString(), timeZone: TIMEZONE },
-        attendees: uniqueEmails.map((email) => ({ email })),
       },
     });
 
@@ -181,18 +182,20 @@ export async function scheduleCall(
       .setZone(TIMEZONE)
       .toFormat("EEEE, LLLL d, yyyy 'at' h:mm a ZZZZ");
 
-    // Create a Gmail draft for the SE to review and send, same as the old script.
+    // Create a Gmail draft for the SE to review and send. Every SE gets the same
+    // "Welcome to FrontrowMD" template — brand name, SE name/title, scheduled
+    // time, and the SE's own booking link are filled in automatically.
     const draftTo = uniqueEmails[0];
     if (draftTo) {
-      const subject = `Your onboarding call with Frontrow — ${brandName}`;
-      const bodyText =
-        `Hi,\n\n` +
-        `We've scheduled an onboarding call for ${brandName} on ${formattedStart}.\n\n` +
-        `If that time doesn't work, you're also welcome to join one of our upcoming webinars instead:\n${WEBINAR_LINK}\n\n` +
-        `Let us know if you have any questions!\n\n` +
-        `Best,\n[Your name]`;
+      const seInfo = getSEInfo(seOwner);
+      const { subject, html } = buildOnboardingCallEmail({
+        brandName,
+        seName: seInfo.displayName,
+        formattedStart,
+        meetingLink: seInfo.meetingLink,
+      });
 
-      await createGmailDraft(auth, draftTo, subject, bodyText).catch((err) => {
+      await createGmailDraft(auth, draftTo, subject, html).catch((err) => {
         console.error(`Failed to create Gmail draft for ${brandName}:`, err);
       });
     }
