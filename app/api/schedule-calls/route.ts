@@ -20,7 +20,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(await getAllScheduled().catch(() => ({})));
   }
 
-  return runScheduling([]);
+  // The daily cron only auto-schedules 1:1 calls (calendar event + draft email)
+  // for strategic/VIP brands as soon as their products are approved. Other
+  // tiers are intentionally left out of the automatic run — auto-adding them
+  // to the webinar sheet was disabled earlier after it silently queued up a
+  // large batch of brands at once. Those still go through the "Add to Webinar
+  // List" button in the dashboard, by hand.
+  return runScheduling([], undefined, false, CALL_TIERS);
 }
 
 // ─── Manual POST ──────────────────────────────────────────────────────────────
@@ -38,13 +44,25 @@ export async function POST(req: NextRequest) {
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
-async function runScheduling(onlyBrandIds: number[], forceAction?: "call" | "webinar", checkClosedWon = false) {
+async function runScheduling(
+  onlyBrandIds: number[],
+  forceAction?: "call" | "webinar",
+  checkClosedWon = false,
+  restrictToTiers?: Set<string>
+) {
   const brands = await getBrands();
 
-  const candidates =
+  let candidates =
     onlyBrandIds.length > 0
       ? brands.filter((b) => onlyBrandIds.includes(b.BRAND_ID))
       : await Promise.all(brands.map(async (b) => ({ brand: b, skip: b.PIPELINE_STATUS !== "products_approved_needs_call" || await isScheduled(b.BRAND_ID) }))).then(results => results.filter(r => !r.skip).map(r => r.brand));
+
+  if (restrictToTiers) {
+    candidates = candidates.filter((b) => {
+      const tier = b.KIND?.toLowerCase() ?? null;
+      return tier !== null && restrictToTiers.has(tier);
+    });
+  }
 
   // Only check closed-won status on manual button press, not cron
   let wonCandidates = candidates;
