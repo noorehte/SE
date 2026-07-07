@@ -19,7 +19,7 @@ import { kv } from "@vercel/kv";
 // have tokens stored — anyone else who completes the Google consent screen is
 // rejected in the callback.
 export const SE_EMAILS: Record<string, string> = {
-  "mohammad@thefrontrowhealth.com": "mohammad",
+  "mohammad.obeid@thefrontrowhealth.com": "mohammad",
   "noor@thefrontrowhealth.com": "noor",
   "naumaan@thefrontrowhealth.com": "naumaan",
   "maha@thefrontrowhealth.com": "maha",
