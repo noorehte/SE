@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Brand, WIDGET_TYPE_LABELS } from "@/lib/metabase";
 import { COLUMNS, ScheduledCall } from "./Dashboard";
+import { SE_INFO } from "@/lib/se-info";
 import { X, ExternalLink, CalendarPlus, Copy, Check, Pencil } from "lucide-react";
 
 const OWNER_INITIALS: Record<string, string> = {
@@ -10,6 +11,9 @@ const OWNER_INITIALS: Record<string, string> = {
   mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK",
 };
 const OWNER_OPTIONS = ["maha", "noor", "naumaan", "mohammad", "kean", "jean", "zeke"];
+// Only SEs with a Google-connected calendar can have a call scheduled on their
+// behalf — this is deliberately narrower than OWNER_OPTIONS above.
+const SCHEDULABLE_SES = Object.keys(SE_INFO);
 const SEGMENT_OPTIONS = ["vip", "strategic", "enterprise", "mid_market"];
 const SEGMENT_LABELS: Record<string, string> = {
   vip: "VIP", strategic: "Strategic", enterprise: "Enterprise", mid_market: "Mid-Market",
@@ -244,6 +248,14 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
   const [scheduleAuthUrl, setScheduleAuthUrl] = useState<string | null>(null);
   const [contacts, setContacts] = useState<string[]>([]);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
+  // Whoever clicks "Schedule 1:1 Call" can put it on their own calendar instead
+  // of the brand's assigned SE — defaults to the assigned SE when they're
+  // schedulable, otherwise the first option.
+  const [scheduleAs, setScheduleAs] = useState<string>(
+    brand.SE_OWNER && SCHEDULABLE_SES.includes(brand.SE_OWNER.toLowerCase())
+      ? brand.SE_OWNER.toLowerCase()
+      : SCHEDULABLE_SES[0]
+  );
 
   useEffect(() => {
     if (!brand.HUBSPOT_COMPANY_ID) return;
@@ -267,7 +279,11 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
       const res = await fetch("/api/schedule-calls", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId: brand.BRAND_ID, action }),
+        body: JSON.stringify({
+          brandId: brand.BRAND_ID,
+          action,
+          ...(action === "call" ? { scheduleAs } : {}),
+        }),
       });
       const data = await res.json();
       const result = data.results?.[0];
@@ -473,16 +489,36 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
                         <ExternalLink size={14} /> Connect Google Account
                       </a>
                     )}
+                    <button
+                      onClick={() => { setScheduleState("idle"); setScheduleError(null); setScheduleAuthUrl(null); }}
+                      className="text-left"
+                      style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: "0.8rem", cursor: "pointer", padding: "2px 0" }}>
+                      Try again
+                    </button>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)", flexShrink: 0 }}>Schedule as</span>
+                      <select
+                        value={scheduleAs}
+                        onChange={(e) => setScheduleAs(e.target.value)}
+                        style={{
+                          background: "#0d1e2d", color: "#fff", border: "1px solid rgba(114,164,191,0.4)",
+                          borderRadius: "6px", padding: "2px 6px", fontSize: "0.8rem", flex: 1,
+                        }}>
+                        {SCHEDULABLE_SES.map((se) => (
+                          <option key={se} value={se}>{SE_INFO[se].displayName}</option>
+                        ))}
+                      </select>
+                    </div>
                     <button
                       onClick={() => handleSchedule("call")}
                       disabled={scheduleState === "loading"}
                       className="flex items-center gap-2 px-3 py-2 rounded-lg transition-opacity text-left"
                       style={{ background: "rgba(114,164,191,0.1)", color: "#72a4bf", fontSize: "0.875rem", opacity: scheduleState === "loading" && scheduleAction === "call" ? 0.6 : 1, border: "none", cursor: "pointer", width: "100%" }}>
                       <CalendarPlus size={14} />
-                      {scheduleState === "loading" && scheduleAction === "call" ? "Scheduling…" : "Schedule 1:1 Call"}
+                      {scheduleState === "loading" && scheduleAction === "call" ? "Scheduling…" : `Schedule 1:1 Call (as ${SE_INFO[scheduleAs].displayName})`}
                     </button>
                     <button
                       onClick={() => handleSchedule("webinar")}

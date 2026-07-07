@@ -30,17 +30,21 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── Manual POST ──────────────────────────────────────────────────────────────
-// Body: { brandId: number, action?: "call" | "webinar" }
+// Body: { brandId: number, action?: "call" | "webinar", scheduleAs?: string }
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const brandId: number | undefined = body.brandId;
   const action: "call" | "webinar" | undefined = body.action;
+  // Whoever is clicking the button can schedule the call on their own calendar
+  // instead of the brand's assigned SE_OWNER — e.g. Mohammad has oversight
+  // across all accounts but isn't the SE on most of them.
+  const scheduleAs: string | undefined = body.scheduleAs || undefined;
 
   if (!brandId) {
     return NextResponse.json({ error: "brandId is required" }, { status: 400 });
   }
 
-  return runScheduling([brandId], action, true);
+  return runScheduling([brandId], action, true, undefined, scheduleAs);
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -48,7 +52,8 @@ async function runScheduling(
   onlyBrandIds: number[],
   forceAction?: "call" | "webinar",
   checkClosedWon = false,
-  restrictToTiers?: Set<string>
+  restrictToTiers?: Set<string>,
+  scheduleAs?: string
 ) {
   const brands = await getBrands();
 
@@ -92,7 +97,11 @@ async function runScheduling(
 
     if (isCallTier) {
       // ── Schedule 1:1 call ────────────────────────────────────────────────
-      if (!brand.SE_OWNER) {
+      // scheduleAs (set on manual, single-brand requests only) overrides whose
+      // calendar/Gmail the call goes on; otherwise falls back to the brand's
+      // assigned SE_OWNER, same as before.
+      const seForCall = scheduleAs ?? brand.SE_OWNER;
+      if (!seForCall) {
         results.push({ brandId: brand.BRAND_ID, brandName: brand.BRAND_NAME, action: "call", success: false, error: "No SE owner assigned" });
         continue;
       }
@@ -100,10 +109,10 @@ async function runScheduling(
       const contactEmails = brand.HUBSPOT_COMPANY_ID
         ? await getCompanyContactEmails(brand.HUBSPOT_COMPANY_ID)
         : [];
-      const result = await scheduleCall(brand.SE_OWNER, brand.BRAND_NAME, contactEmails, tier);
+      const result = await scheduleCall(seForCall, brand.BRAND_NAME, contactEmails, tier);
 
       if (result.success) {
-        await markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER, result.scheduledDate ?? "", "call").catch(() => {});
+        await markScheduled(brand.BRAND_ID, brand.BRAND_NAME, seForCall, result.scheduledDate ?? "", "call").catch(() => {});
       }
 
       results.push({
