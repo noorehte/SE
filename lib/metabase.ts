@@ -122,27 +122,40 @@ export async function getBrands(): Promise<Brand[]> {
     metabaseQuery(202, PRODUCT_FIELDS),
   ]);
 
-  // Full STG brand lookup (name, hubspot, owners, created_at)
-  const stgMap = new Map<number, {
-    NAME: string;
-    HUBSPOT_COMPANY_ID: number | null;
-    COLLABORATOR_CODE: string | null;
+  // Table 203 (stg-brands) is the comprehensive brand list — every brand flows in
+  // here, including ones that never went through the onboarding portal. Table 447
+  // (FCT_BRAND_ONBOARDING) only covers portal brands, so from here on it's used
+  // as an enrichment lookup keyed by brand ID, not the base list.
+  const onboardingMap = new Map<number, {
+    BRAND_NAME: string;
     SE_OWNER: string | null;
     OPS_OWNER: string | null;
     ACCOUNT_MANAGER: string | null;
-    CREATED_AT: string;
-    KIND: string | null;
+    BD_REP: string | null;
+    BRAND_CREATED_AT: string;
+    ANY_ADMIN_LAST_SIGNED_IN_AT: string | null;
+    REVIEWS_REQUESTED: number;
+    HAS_REVIEWS_READY: boolean;
+    CA_REQUESTED: number;
+    HAS_CA_READY: boolean;
+    HAS_PAYMENT_METHOD: boolean;
+    SUBMITTED_TO_MAB: boolean;
   }>();
-  for (const r of stgBrandRows) {
-    stgMap.set(r.ID, {
-      NAME: r.NAME,
-      HUBSPOT_COMPANY_ID: r.HUBSPOT_COMPANY_ID,
-      COLLABORATOR_CODE: r.COLLABORATOR_CODE,
+  for (const r of onboardingRows) {
+    onboardingMap.set(r.BRAND_ID, {
+      BRAND_NAME: r.BRAND_NAME,
       SE_OWNER: r.SE_OWNER,
       OPS_OWNER: r.OPS_OWNER,
       ACCOUNT_MANAGER: r.ACCOUNT_MANAGER,
-      CREATED_AT: r.CREATED_AT,
-      KIND: r.KIND ?? null,
+      BD_REP: r.BD_REP,
+      BRAND_CREATED_AT: r.BRAND_CREATED_AT,
+      ANY_ADMIN_LAST_SIGNED_IN_AT: r.ANY_ADMIN_LAST_SIGNED_IN_AT,
+      REVIEWS_REQUESTED: r.REVIEWS_REQUESTED,
+      HAS_REVIEWS_READY: r.HAS_REVIEWS_READY,
+      CA_REQUESTED: r.CA_REQUESTED,
+      HAS_CA_READY: r.HAS_CA_READY,
+      HAS_PAYMENT_METHOD: r.HAS_PAYMENT_METHOD,
+      SUBMITTED_TO_MAB: r.SUBMITTED_TO_MAB,
     });
   }
 
@@ -163,13 +176,17 @@ export async function getBrands(): Promise<Brand[]> {
     }
   }
 
-  // Product status per brand
+  // Product status + count per brand — PRODUCTS_COUNT is computed directly from
+  // table 202 (rather than trusted from table 447) so it works the same way for
+  // every brand, whether or not it has an onboarding-portal record.
   const pendingBoardReview = new Set<number>();
   const rejectedByBoard = new Set<number>();
   const approvedProductBrands = new Set<number>(); // has at least one approved product
   const shareThresholdMet = new Set<number>();
   const firstThresholdDate = new Map<number, string>(); // when share threshold was first met
+  const productCountByBrand = new Map<number, number>();
   for (const r of productRows) {
+    productCountByBrand.set(r.HEALTH_BRAND_ID, (productCountByBrand.get(r.HEALTH_BRAND_ID) ?? 0) + 1);
     if (r.STATUS === "pending_board_review") pendingBoardReview.add(r.HEALTH_BRAND_ID);
     else if (r.STATUS === "rejected_by_board") rejectedByBoard.add(r.HEALTH_BRAND_ID);
     else approvedProductBrands.add(r.HEALTH_BRAND_ID); // any other status = approved
@@ -184,40 +201,45 @@ export async function getBrands(): Promise<Brand[]> {
 
   const now = Date.now();
   const overrides = await getAllOverrides();
-  const onboardingIds = new Set(onboardingRows.map((r: { BRAND_ID: number }) => r.BRAND_ID));
 
   function buildBrand(
     brandId: number,
-    base: { // returns null if brand should be excluded from the board
-      BRAND_NAME: string;
+    stg: { // returns null if brand should be excluded from the board
+      NAME: string;
+      HUBSPOT_COMPANY_ID: number | null;
+      COLLABORATOR_CODE: string | null;
       SE_OWNER: string | null;
       OPS_OWNER: string | null;
       ACCOUNT_MANAGER: string | null;
-      BD_REP: string | null;
-      BRAND_CREATED_AT: string;
-      ANY_ADMIN_LAST_SIGNED_IN_AT: string | null;
-      PRODUCTS_COUNT: number;
-      REVIEWS_REQUESTED: number;
-      HAS_REVIEWS_READY: boolean;
-      CA_REQUESTED: number;
-      HAS_CA_READY: boolean;
-      HAS_PAYMENT_METHOD: boolean;
-      SUBMITTED_TO_MAB: boolean;
+      CREATED_AT: string;
+      KIND: string | null;
     }
   ): Brand | null {
-    const stg = stgMap.get(brandId);
+    // Enrichment from the onboarding-portal table, when this brand has a record
+    // there. Non-portal brands fall back to table 203's own fields, or sensible
+    // defaults for data that only ever comes from the portal flow.
+    const onboarding = onboardingMap.get(brandId);
     const override: OverrideEntry | undefined = overrides[String(brandId)];
     const f = override?.fields ?? {};
     const brandWithExtra = {
       BRAND_ID: brandId,
-      ...base,
-      SE_OWNER: f.SE_OWNER ?? base.SE_OWNER,
-      OPS_OWNER: f.OPS_OWNER ?? base.OPS_OWNER,
-      ACCOUNT_MANAGER: f.ACCOUNT_MANAGER ?? base.ACCOUNT_MANAGER,
-      BD_REP: f.BD_REP ?? base.BD_REP,
-      HUBSPOT_COMPANY_ID: stg?.HUBSPOT_COMPANY_ID ?? null,
-      COLLABORATOR_CODE: f.COLLABORATOR_CODE ?? stg?.COLLABORATOR_CODE ?? null,
-      KIND: f.KIND ?? stg?.KIND ?? null,
+      BRAND_NAME: onboarding?.BRAND_NAME ?? stg.NAME,
+      SE_OWNER: f.SE_OWNER ?? onboarding?.SE_OWNER ?? stg.SE_OWNER,
+      OPS_OWNER: f.OPS_OWNER ?? onboarding?.OPS_OWNER ?? stg.OPS_OWNER,
+      ACCOUNT_MANAGER: f.ACCOUNT_MANAGER ?? onboarding?.ACCOUNT_MANAGER ?? stg.ACCOUNT_MANAGER,
+      BD_REP: f.BD_REP ?? onboarding?.BD_REP ?? null,
+      BRAND_CREATED_AT: onboarding?.BRAND_CREATED_AT ?? stg.CREATED_AT,
+      ANY_ADMIN_LAST_SIGNED_IN_AT: onboarding?.ANY_ADMIN_LAST_SIGNED_IN_AT ?? null,
+      PRODUCTS_COUNT: productCountByBrand.get(brandId) ?? 0,
+      REVIEWS_REQUESTED: onboarding?.REVIEWS_REQUESTED ?? 0,
+      HAS_REVIEWS_READY: onboarding?.HAS_REVIEWS_READY ?? false,
+      CA_REQUESTED: onboarding?.CA_REQUESTED ?? 0,
+      HAS_CA_READY: onboarding?.HAS_CA_READY ?? false,
+      HAS_PAYMENT_METHOD: onboarding?.HAS_PAYMENT_METHOD ?? false,
+      SUBMITTED_TO_MAB: onboarding?.SUBMITTED_TO_MAB ?? false,
+      HUBSPOT_COMPANY_ID: stg.HUBSPOT_COMPANY_ID ?? null,
+      COLLABORATOR_CODE: f.COLLABORATOR_CODE ?? stg.COLLABORATOR_CODE ?? null,
+      KIND: f.KIND ?? stg.KIND ?? null,
       PAYMENT_COMPLETED_AT: null,
       HAS_PENDING_BOARD_REVIEW: pendingBoardReview.has(brandId),
       HAS_REJECTED_BY_BOARD: rejectedByBoard.has(brandId),
@@ -259,28 +281,22 @@ export async function getBrands(): Promise<Brand[]> {
     return { ...brandWithExtra, PIPELINE_STATUS: pipelineStatus, DAYS_IN_STATUS: daysInStatus };
   }
 
-  // Brands from FCT_BRAND_ONBOARDING
-  const result: Brand[] = (onboardingRows.map((r: {
-    BRAND_ID: number; BRAND_NAME: string; SE_OWNER: string | null; OPS_OWNER: string | null;
-    ACCOUNT_MANAGER: string | null; BD_REP: string | null; BRAND_CREATED_AT: string;
-    ANY_ADMIN_LAST_SIGNED_IN_AT: string | null; PRODUCTS_COUNT: number; REVIEWS_REQUESTED: number;
-    HAS_REVIEWS_READY: boolean; CA_REQUESTED: number; HAS_CA_READY: boolean;
-    HAS_PAYMENT_METHOD: boolean; SUBMITTED_TO_MAB: boolean;
-  }) => buildBrand(r.BRAND_ID, {
-    BRAND_NAME: r.BRAND_NAME,
+  // Brands from table 203 (stg-brands) — the comprehensive list, including
+  // brands with no onboarding-portal record. Table 447 data is merged in above
+  // via onboardingMap for the brands that do have one.
+  const result: Brand[] = (stgBrandRows.map((r: {
+    ID: number; NAME: string; HUBSPOT_COMPANY_ID: number | null; COLLABORATOR_CODE: string | null;
+    SE_OWNER: string | null; OPS_OWNER: string | null; ACCOUNT_MANAGER: string | null;
+    CREATED_AT: string; KIND: string | null;
+  }) => buildBrand(r.ID, {
+    NAME: r.NAME,
+    HUBSPOT_COMPANY_ID: r.HUBSPOT_COMPANY_ID,
+    COLLABORATOR_CODE: r.COLLABORATOR_CODE,
     SE_OWNER: r.SE_OWNER,
     OPS_OWNER: r.OPS_OWNER,
     ACCOUNT_MANAGER: r.ACCOUNT_MANAGER,
-    BD_REP: r.BD_REP,
-    BRAND_CREATED_AT: r.BRAND_CREATED_AT,
-    ANY_ADMIN_LAST_SIGNED_IN_AT: r.ANY_ADMIN_LAST_SIGNED_IN_AT,
-    PRODUCTS_COUNT: r.PRODUCTS_COUNT,
-    REVIEWS_REQUESTED: r.REVIEWS_REQUESTED,
-    HAS_REVIEWS_READY: r.HAS_REVIEWS_READY,
-    CA_REQUESTED: r.CA_REQUESTED,
-    HAS_CA_READY: r.HAS_CA_READY,
-    HAS_PAYMENT_METHOD: r.HAS_PAYMENT_METHOD,
-    SUBMITTED_TO_MAB: r.SUBMITTED_TO_MAB,
+    CREATED_AT: r.CREATED_AT,
+    KIND: r.KIND ?? null,
   })) as (Brand | null)[]).filter((b): b is Brand => b !== null);
 
   // Rejected brands fall off the board — no longer added here

@@ -183,7 +183,7 @@ export async function scheduleCall(
     await calendar.events.insert({
       calendarId: "primary",
       requestBody: {
-        summary: `Brand Call: ${brandName}`,
+        summary: `${brandName} x FrontrowMD | Implementations`,
         start: { dateTime: slot.start.toISOString(), timeZone: TIMEZONE },
         end: { dateTime: slot.end.toISOString(), timeZone: TIMEZONE },
       },
