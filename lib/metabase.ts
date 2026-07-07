@@ -109,18 +109,35 @@ export async function getBrands(): Promise<Brand[]> {
     3407, // SUBMITTED_TO_MAB
   ];
 
-  const BRAND_STG_FIELDS = [766, 769, 764, 3282, 3279, 3280, 3281, 767, 760]; // ID, NAME, HUBSPOT_COMPANY_ID, COLLABORATOR_CODE, SE_OWNER, OPS_OWNER, ACCOUNT_MANAGER, CREATED_AT, KIND
   const WIDGET_FIELDS = [3552, 3551, 3555];  // BRAND_ID, DAY, VIEWS
   const PRODUCT_FIELDS = [738, 731, 729];    // HEALTH_BRAND_ID, STATUS, DATE_PASSED_PROVIDER_THRESHOLD
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const [onboardingRows, stgBrandRows, widgetRows, productRows] = await Promise.all([
+  // No explicit field list for table 203 here (unlike the other tables) — we
+  // need to find the is_brand_partner column by name below, and don't yet know
+  // its field ID the way we do for the columns we've been selecting explicitly.
+  const [onboardingRows, allStgBrandRows, widgetRows, productRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
-    metabaseQuery(203, BRAND_STG_FIELDS),
+    metabaseQuery(203),
     metabaseQuery(464, WIDGET_FIELDS),
     metabaseQuery(202, PRODUCT_FIELDS),
   ]);
+
+  // Only brands flagged as an actual partner belong on the dashboard — table 203
+  // also contains leads/prospects/test accounts that never became partners,
+  // which is what was flooding the board with old/irrelevant brands.
+  const partnerKey = allStgBrandRows.length > 0
+    ? Object.keys(allStgBrandRows[0]).find((k) => /^is[_ ]?partner$/i.test(k))
+    : undefined;
+
+  if (!partnerKey) {
+    throw new Error(
+      "Could not find an \"is partner\"-like column on table 203 — check the exact column name in Metabase and update lib/metabase.ts."
+    );
+  }
+
+  const stgBrandRows = allStgBrandRows.filter((r: Record<string, unknown>) => !!r[partnerKey]);
 
   // Table 203 (stg-brands) is the comprehensive brand list — every brand flows in
   // here, including ones that never went through the onboarding portal. Table 447
