@@ -138,10 +138,20 @@ async function findAvailableSlot(
   return null;
 }
 
+const PRIORITY_TIERS = new Set(["strategic", "vip"]);
+
+// Strategic/VIP brands get scheduled ~2 weeks out instead of the usual ~4,
+// keeping the same 2-week search window either way.
+function getLeadTimeDays(tier: string | null | undefined): { startDays: number; endDays: number; weeksOut: number } {
+  const isPriority = !!tier && PRIORITY_TIERS.has(tier.toLowerCase());
+  return isPriority ? { startDays: 14, endDays: 28, weeksOut: 2 } : { startDays: 28, endDays: 42, weeksOut: 4 };
+}
+
 export async function scheduleCall(
   seOwner: string,
   brandName: string,
-  contactEmails: string[] = []
+  contactEmails: string[] = [],
+  tier: string | null = null
 ): Promise<{ success: boolean; scheduledDate?: string; error?: string; authUrl?: string }> {
   const auth = await getAuthorizedClient(seOwner);
 
@@ -154,8 +164,9 @@ export async function scheduleCall(
   }
 
   try {
-    const startDate = DateTime.now().plus({ days: 28 }).toJSDate();
-    const endDate = DateTime.now().plus({ days: 42 }).toJSDate();
+    const { startDays, endDays, weeksOut } = getLeadTimeDays(tier);
+    const startDate = DateTime.now().plus({ days: startDays }).toJSDate();
+    const endDate = DateTime.now().plus({ days: endDays }).toJSDate();
 
     const slot = await findAvailableSlot(auth, 30, startDate, endDate);
     if (!slot) {
@@ -193,6 +204,7 @@ export async function scheduleCall(
         seName: seInfo.displayName,
         formattedStart,
         meetingLink: seInfo.meetingLink,
+        leadTimeWeeks: weeksOut,
       });
 
       await createGmailDraft(auth, draftTo, subject, html).catch((err) => {

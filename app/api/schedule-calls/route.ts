@@ -82,7 +82,7 @@ async function runScheduling(onlyBrandIds: number[], forceAction?: "call" | "web
       const contactEmails = brand.HUBSPOT_COMPANY_ID
         ? await getCompanyContactEmails(brand.HUBSPOT_COMPANY_ID)
         : [];
-      const result = await scheduleCall(brand.SE_OWNER, brand.BRAND_NAME, contactEmails);
+      const result = await scheduleCall(brand.SE_OWNER, brand.BRAND_NAME, contactEmails, tier);
 
       if (result.success) {
         await markScheduled(brand.BRAND_ID, brand.BRAND_NAME, brand.SE_OWNER, result.scheduledDate ?? "", "call").catch(() => {});

@@ -48,17 +48,19 @@ export function buildOnboardingCallEmail({
   seName,
   formattedStart,
   meetingLink,
+  leadTimeWeeks = 4,
 }: {
   brandName: string;
   seName: string;
   formattedStart: string;
   meetingLink: string;
+  leadTimeWeeks?: number;
 }): { subject: string; html: string } {
-  const subject = `Your onboarding call with Frontrow — ${brandName}`;
+  const subject = `Your onboarding call with Frontrow - ${brandName}`;
 
   const rescheduleLine = meetingLink
-    ? `Need to reschedule? Due to high volume, our next available slots are ~4 weeks out — check availability <a href="${meetingLink}" style="color:${LINK_BLUE};">here</a>.`
-    : `Need to reschedule? Due to high volume, our next available slots are ~4 weeks out — just reply to this email and we'll find a new time.`;
+    ? `Need to reschedule? Due to high volume, our next available slots are ~${leadTimeWeeks} weeks out — check availability <a href="${meetingLink}" style="color:${LINK_BLUE};">here</a>.`
+    : `Need to reschedule? Due to high volume, our next available slots are ~${leadTimeWeeks} weeks out — just reply to this email and we'll find a new time.`;
 
   const html = `
 <div style="background:#eef0f3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;">
