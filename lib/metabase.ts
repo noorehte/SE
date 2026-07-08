@@ -249,33 +249,47 @@ export async function getBrands(): Promise<Brand[]> {
         return { iso: new Date(ms).toISOString(), ms };
       }
 
-      let loggedSample = false;
+      let loggedPopulatedSample = false;
+      let rowsWithLastView = 0;
+      let rowsLive = 0;
       const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
       for (const r of allWidgetTypeRows as Record<string, unknown>[]) {
         const brandId = r[brandIdKey] as number | null;
         const type = r[typeKey] as string | null;
         if (brandId == null || !type) continue;
 
-        if (!loggedSample) {
-          // One-time diagnostic so a wrong guess is visible in server logs
-          // instead of silently producing "never live" for every brand.
-          console.log("Sample table 201 row for live-tracking date parsing:", {
-            rawFirstView: r[firstViewKey],
-            rawLastView: r[lastViewKey],
-            parsedFirstView: parseMetabaseTimestamp(r[firstViewKey]).iso,
-            parsedLastView: parseMetabaseTimestamp(r[lastViewKey]).iso,
-          });
-          loggedSample = true;
-        }
-
         const first = parseMetabaseTimestamp(r[firstViewKey]);
         const last = parseMetabaseTimestamp(r[lastViewKey]);
         const isLive = last.ms != null && last.ms >= thirtyDaysAgoMs;
+        if (last.ms != null) rowsWithLastView++;
+        if (isLive) rowsLive++;
+
+        // Log the first row that actually HAS a last-view value — logging row
+        // zero is useless since most widgets have never been viewed and are
+        // null, which told us nothing about the date format on populated rows.
+        if (!loggedPopulatedSample && last.ms != null) {
+          console.log("Sample POPULATED table 201 row for live-tracking date parsing:", {
+            brandId,
+            type,
+            rawFirstView: r[firstViewKey],
+            rawLastView: r[lastViewKey],
+            parsedFirstViewIso: first.iso,
+            parsedLastViewIso: last.iso,
+            thirtyDaysAgoIso: new Date(thirtyDaysAgoMs).toISOString(),
+            computedIsLive: isLive,
+          });
+          loggedPopulatedSample = true;
+        }
 
         const existing = widgetStatusByBrand.get(brandId) ?? {};
         existing[type] = { wentLiveAt: first.iso, lastViewAt: last.iso, isLive };
         widgetStatusByBrand.set(brandId, existing);
       }
+      console.log("Table 201 live-tracking summary:", {
+        totalRows: allWidgetTypeRows.length,
+        rowsWithLastView,
+        rowsComputedLive: rowsLive,
+      });
     }
   }
 
