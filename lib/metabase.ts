@@ -1,6 +1,6 @@
 import { getAllOverrides, OverrideEntry } from "@/lib/overrides";
 
-async function metabaseQuery(tableId: number, fields?: number[], filters?: unknown[]) {
+async function metabaseQuery(tableId: number, fields?: number[], filters?: unknown[], limit?: number) {
   // Read at request time — module-level access gets baked in as undefined for Sensitive vars
   const METABASE_URL = process.env.METABASE_URL!;
   const METABASE_API_KEY = process.env.METABASE_API_KEY!;
@@ -8,6 +8,10 @@ async function metabaseQuery(tableId: number, fields?: number[], filters?: unkno
   const query: Record<string, unknown> = { "source-table": tableId };
   if (fields) query["fields"] = fields.map((id) => ["field", id, null]);
   if (filters) query["filter"] = filters;
+  // Metabase's /api/dataset defaults to a 2000-row cap. Tables with more rows
+  // than that (e.g. table 201, which has a row per widget *version* including
+  // old/discarded ones) get silently truncated unless we ask for more.
+  if (limit) query["limit"] = limit;
 
   const res = await fetch(`${METABASE_URL}/api/dataset`, {
     method: "POST",
@@ -135,7 +139,10 @@ export async function getBrands(): Promise<Brand[]> {
     metabaseQuery(203),
     metabaseQuery(464, WIDGET_FIELDS),
     metabaseQuery(202, PRODUCT_FIELDS),
-    metabaseQuery(201),
+    // Table 201 has a row per widget *version* (including old/discarded ones),
+    // so it can easily exceed Metabase's default 2000-row API cap — request
+    // enough rows that we're not silently truncating real widgets.
+    metabaseQuery(201, undefined, undefined, 50000),
   ]);
 
   // Only brands flagged as an actual partner belong on the dashboard — table 203
@@ -217,6 +224,10 @@ export async function getBrands(): Promise<Brand[]> {
     const typeKey = sampleKeys.find((k: string) => /presentation[_ ]?type/i.test(k)) ?? sampleKeys.find((k: string) => /^type$/i.test(k));
     const firstViewKey = sampleKeys.find((k: string) => /first[_ ]?view/i.test(k));
     const lastViewKey = sampleKeys.find((k: string) => /last[_ ]?view/i.test(k));
+    // Table 201 keeps a row per widget *version* — discarded (soft-deleted)
+    // versions shouldn't count toward live status, and old versions of a
+    // still-active widget shouldn't overwrite a newer, actually-live one.
+    const discardedAtKey = sampleKeys.find((k: string) => /discarded[_ ]?at/i.test(k));
 
     if (!brandIdKey || !typeKey || !firstViewKey || !lastViewKey) {
       console.error(
@@ -252,11 +263,24 @@ export async function getBrands(): Promise<Brand[]> {
       let loggedPopulatedSample = false;
       let rowsWithLastView = 0;
       let rowsLive = 0;
+      let rowsDiscarded = 0;
+      let rowsSuperseded = 0;
+      // Track the raw last-view ms we picked per brand+type, so a later row
+      // for the same brand+type only overwrites an earlier one if it's
+      // actually more recent (rather than whichever row happens to come last
+      // in Metabase's return order, which could be an old, no-longer-live
+      // version stomping on a genuinely live one).
+      const bestLastViewMsByKey = new Map<string, number>();
       const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
       for (const r of allWidgetTypeRows as Record<string, unknown>[]) {
         const brandId = r[brandIdKey] as number | null;
         const type = r[typeKey] as string | null;
         if (brandId == null || !type) continue;
+
+        if (discardedAtKey && r[discardedAtKey] != null && r[discardedAtKey] !== "") {
+          rowsDiscarded++;
+          continue;
+        }
 
         const first = parseMetabaseTimestamp(r[firstViewKey]);
         const last = parseMetabaseTimestamp(r[lastViewKey]);
@@ -281,12 +305,24 @@ export async function getBrands(): Promise<Brand[]> {
           loggedPopulatedSample = true;
         }
 
+        const key = `${brandId}::${type}`;
+        const priorMs = bestLastViewMsByKey.get(key);
+        if (priorMs != null && (last.ms ?? -Infinity) <= priorMs) {
+          // A row we've already kept for this brand+type has a more recent
+          // (or equal) last-view — this row is an older widget version, skip it.
+          rowsSuperseded++;
+          continue;
+        }
+        bestLastViewMsByKey.set(key, last.ms ?? -Infinity);
+
         const existing = widgetStatusByBrand.get(brandId) ?? {};
         existing[type] = { wentLiveAt: first.iso, lastViewAt: last.iso, isLive };
         widgetStatusByBrand.set(brandId, existing);
       }
       console.log("Table 201 live-tracking summary:", {
         totalRows: allWidgetTypeRows.length,
+        rowsDiscarded,
+        rowsSuperseded,
         rowsWithLastView,
         rowsComputedLive: rowsLive,
       });
