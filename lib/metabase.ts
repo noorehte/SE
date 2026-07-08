@@ -224,18 +224,56 @@ export async function getBrands(): Promise<Brand[]> {
         { brandIdKey, typeKey, firstViewKey, lastViewKey, availableColumns: sampleKeys }
       );
     } else {
+      // Metabase can return timestamps as ISO strings, epoch seconds, or epoch
+      // milliseconds depending on the underlying column type — this was the
+      // root cause of "isLive" always coming back false (a raw epoch-seconds
+      // number like 1750000000 was being passed straight to `new Date()`,
+      // which treats numbers as milliseconds and lands in 1970, i.e. always
+      // "more than 30 days ago"). Normalize everything to an ISO string.
+      function parseMetabaseTimestamp(raw: unknown): { iso: string | null; ms: number | null } {
+        if (raw == null || raw === "") return { iso: null, ms: null };
+        let ms: number;
+        if (typeof raw === "number") {
+          // Epoch seconds (~10 digits) vs epoch milliseconds (~13 digits).
+          ms = raw > 1e12 ? raw : raw * 1000;
+        } else {
+          const str = String(raw);
+          if (/^\d+$/.test(str)) {
+            const num = Number(str);
+            ms = num > 1e12 ? num : num * 1000;
+          } else {
+            ms = Date.parse(str);
+          }
+        }
+        if (!Number.isFinite(ms)) return { iso: null, ms: null };
+        return { iso: new Date(ms).toISOString(), ms };
+      }
+
+      let loggedSample = false;
       const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
       for (const r of allWidgetTypeRows as Record<string, unknown>[]) {
         const brandId = r[brandIdKey] as number | null;
         const type = r[typeKey] as string | null;
         if (brandId == null || !type) continue;
 
-        const wentLiveAt = (r[firstViewKey] as string | null) ?? null;
-        const lastViewAt = (r[lastViewKey] as string | null) ?? null;
-        const isLive = !!lastViewAt && new Date(lastViewAt).getTime() >= thirtyDaysAgoMs;
+        if (!loggedSample) {
+          // One-time diagnostic so a wrong guess is visible in server logs
+          // instead of silently producing "never live" for every brand.
+          console.log("Sample table 201 row for live-tracking date parsing:", {
+            rawFirstView: r[firstViewKey],
+            rawLastView: r[lastViewKey],
+            parsedFirstView: parseMetabaseTimestamp(r[firstViewKey]).iso,
+            parsedLastView: parseMetabaseTimestamp(r[lastViewKey]).iso,
+          });
+          loggedSample = true;
+        }
+
+        const first = parseMetabaseTimestamp(r[firstViewKey]);
+        const last = parseMetabaseTimestamp(r[lastViewKey]);
+        const isLive = last.ms != null && last.ms >= thirtyDaysAgoMs;
 
         const existing = widgetStatusByBrand.get(brandId) ?? {};
-        existing[type] = { wentLiveAt, lastViewAt, isLive };
+        existing[type] = { wentLiveAt: first.iso, lastViewAt: last.iso, isLive };
         widgetStatusByBrand.set(brandId, existing);
       }
     }
