@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Brand } from "@/lib/metabase";
-import { COLUMNS } from "./Dashboard";
+import { ALL_COLUMNS } from "./Dashboard";
 import Sidebar from "./Sidebar";
 import { AlertCircle, UserX, Package } from "lucide-react";
 
@@ -23,7 +23,7 @@ const ALERT_CONFIGS: { type: AlertType; label: string; description: string; colo
 function buildAlerts(brands: Brand[]): Alert[] {
   const alerts: Alert[] = [];
   for (const brand of brands) {
-    if (brand.DAYS_IN_STATUS > 7)      alerts.push({ type: "stuck",       brand, message: `${brand.DAYS_IN_STATUS} days in "${COLUMNS.find(c => c.id === brand.PIPELINE_STATUS)?.label ?? brand.PIPELINE_STATUS}"` });
+    if (brand.DAYS_IN_STATUS > 7)      alerts.push({ type: "stuck",       brand, message: `${brand.DAYS_IN_STATUS} days in "${ALL_COLUMNS.find(c => c.id === brand.PIPELINE_STATUS)?.label ?? brand.PIPELINE_STATUS}"` });
     if (!brand.SE_OWNER)               alerts.push({ type: "no_se",       brand, message: "No SE owner assigned" });
     if (brand.PRODUCTS_COUNT === 0)    alerts.push({ type: "no_products", brand, message: "0 products in portal" });
   }
@@ -87,7 +87,7 @@ export default function AlertsPage({ initialBrands }: { initialBrands: Brand[] }
                 <tbody>
                   {filtered.map((alert, i) => {
                     const cfg = ALERT_CONFIGS.find(c => c.type === alert.type)!;
-                    const col = COLUMNS.find(c => c.id === alert.brand.PIPELINE_STATUS);
+                    const col = ALL_COLUMNS.find(c => c.id === alert.brand.PIPELINE_STATUS);
                     const hubspotUrl = alert.brand.HUBSPOT_COMPANY_ID ? `https://app.hubspot.com/contacts/21791298/company/${alert.brand.HUBSPOT_COMPANY_ID}` : null;
                     const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${alert.brand.BRAND_ID}`;
                     return (

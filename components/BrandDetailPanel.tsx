@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Brand, WIDGET_TYPE_LABELS, WidgetTypeStatus } from "@/lib/metabase";
-import { COLUMNS, ScheduledCall } from "./Dashboard";
+import { ALL_COLUMNS, ScheduledCall } from "./Dashboard";
 import { SE_INFO } from "@/lib/se-info";
 import { X, ExternalLink, CalendarPlus, Copy, Check, Pencil } from "lucide-react";
 
@@ -328,7 +328,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
     }
   }
 
-  const col = COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
+  const col = ALL_COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
   const hubspotUrl = brand.HUBSPOT_COMPANY_ID
     ? `https://app.hubspot.com/contacts/21791298/company/${brand.HUBSPOT_COMPANY_ID}`
     : null;

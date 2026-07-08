@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS } from "@/lib/metabase";
 import BrandCard from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
-import { LayoutGrid, List, RefreshCw } from "lucide-react";
+import { LayoutGrid, List, RefreshCw, Search } from "lucide-react";
 import Sidebar from "./Sidebar";
 import GoogleConnectStatus from "./GoogleConnectStatus";
 
@@ -17,12 +17,25 @@ export interface ScheduledCall {
   action?: "call" | "webinar_sheet";
 }
 
+// The 5 actionable pipeline stages shown by default — brands that haven't
+// started (no products yet) or are stuck in board review aren't part of the
+// SE's day-to-day workflow, so they're hidden unless "View all" is on.
 export const COLUMNS: { id: PipelineStatus; label: string; accent: string }[] = [
   { id: "products_approved_needs_call", label: "Products Approved — Book Onboarding Call", accent: "#72a4bf" },
   { id: "code_snippets_available",      label: "Code Snippets Available",                  accent: "#8b7fe8" },
   { id: "collaborator_code_brand",      label: "Collaborator Code Brand",                  accent: "#e9a84c" },
   { id: "live",                         label: "Live",                                      accent: "#4caf82" },
   { id: "was_live",                     label: "Was Live — Needs Attention",               accent: "#e05c5c" },
+];
+
+// Every status a brand can have, including the two "not yet actionable"
+// ones that getBrands() used to silently drop from the dashboard entirely.
+// Used for status labels/colors everywhere and for the Kanban board when
+// "View all" is toggled on.
+export const ALL_COLUMNS: { id: PipelineStatus; label: string; accent: string }[] = [
+  { id: "not_started",                  label: "Not Started — No Products Yet",            accent: "#5a6b78" },
+  { id: "pending_review",               label: "Pending Board Review",                     accent: "#b08bd6" },
+  ...COLUMNS,
 ];
 
 const SE_OWNERS = ["maha", "noor", "naumaan"];
@@ -37,17 +50,33 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const [loading, setLoading] = useState(false);
   const [widgetTypeFilter, setWidgetTypeFilter] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  // When on, the Kanban board adds the "Not Started" / "Pending Board Review"
+  // columns and the stat cards/table include those brands too — otherwise
+  // brands with no actionable status are hidden from the default view.
+  const [viewAll, setViewAll] = useState(false);
 
-  const seFiltered = seFilter === "all" ? brands : brands.filter((b) => b.SE_OWNER === seFilter);
+  const searched = search.trim()
+    ? brands.filter((b) => b.BRAND_NAME.toLowerCase().includes(search.trim().toLowerCase()))
+    : brands;
+
+  const seFiltered = seFilter === "all" ? searched : searched.filter((b) => b.SE_OWNER === seFilter);
 
   const statFiltered = statFilter === "all" ? seFiltered
     : statFilter === "in_progress" ? seFiltered.filter(b => !["live", "was_live"].includes(b.PIPELINE_STATUS))
     : statFilter === "stuck" ? seFiltered.filter(b => b.DAYS_IN_STATUS > 7)
     : seFiltered.filter(b => b.PIPELINE_STATUS === "live");
 
-  const filtered = widgetTypeFilter
+  const widgetFiltered = widgetTypeFilter
     ? statFiltered.filter(b => b.WIDGET_TYPES.includes(widgetTypeFilter))
     : statFiltered;
+
+  // Outside of "View all", keep the board scoped to the 5 actionable statuses
+  // even though getBrands() now returns every partnered brand.
+  const activeColumns = viewAll ? ALL_COLUMNS : COLUMNS;
+  const filtered = viewAll
+    ? widgetFiltered
+    : widgetFiltered.filter((b) => COLUMNS.some((c) => c.id === b.PIPELINE_STATUS));
 
   const visibleBrands = columnFilter ? filtered.filter((b) => b.PIPELINE_STATUS === columnFilter) : filtered;
   const stuck = seFiltered.filter((b) => b.DAYS_IN_STATUS > 7).length;
@@ -91,10 +120,34 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
             <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff", lineHeight: 1.2 }}>SE pipeline</h1>
             <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>Brand portal checklist → automated status movement</p>
           </div>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex items-center gap-3 mt-1 flex-wrap justify-end">
             <GoogleConnectStatus />
-            {(columnFilter || statFilter !== "all" || widgetTypeFilter) && (
-              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); }}
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)" }}>
+              <Search size={14} style={{ color: "rgba(255,255,255,0.4)" }} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search brands…"
+                className="bg-transparent outline-none"
+                style={{ color: "#fff", fontSize: "0.875rem", width: "160px" }}
+              />
+              {search && (
+                <button onClick={() => setSearch("")} style={{ color: "rgba(255,255,255,0.35)" }} className="hover:opacity-70">✕</button>
+              )}
+            </div>
+            <button
+              onClick={() => setViewAll((v) => !v)}
+              className="text-sm px-3 py-2 rounded-lg flex items-center gap-1.5"
+              title={viewAll ? "Showing every brand, any status" : "Only showing the 5 actionable pipeline stages"}
+              style={{
+                background: viewAll ? "rgba(114,164,191,0.2)" : "rgba(255,255,255,0.07)",
+                color: viewAll ? "#72a4bf" : "rgba(255,255,255,0.6)",
+                border: `1px solid ${viewAll ? "rgba(114,164,191,0.4)" : "rgba(255,255,255,0.12)"}`,
+              }}>
+              View all
+            </button>
+            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search) && (
+              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); }}
                 className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
                 ✕ Clear filter
@@ -183,6 +236,7 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
           {view === "kanban" ? (
             <KanbanView
               brands={filtered}
+              columns={activeColumns}
               columnFilter={columnFilter}
               scheduledCalls={scheduledCalls}
               onMove={moveBrand}
@@ -190,7 +244,7 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
               onHeaderClick={toggleColumnFilter}
             />
           ) : (
-            <TableView brands={visibleBrands} scheduledCalls={scheduledCalls} onMove={moveBrand} onRowClick={setSelectedBrand} />
+            <TableView brands={visibleBrands} columns={activeColumns} scheduledCalls={scheduledCalls} onMove={moveBrand} onRowClick={setSelectedBrand} />
           )}
         </div>
 
@@ -229,6 +283,7 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
 
 function KanbanView({
   brands,
+  columns,
   columnFilter,
   scheduledCalls,
   onMove,
@@ -236,6 +291,7 @@ function KanbanView({
   onHeaderClick,
 }: {
   brands: Brand[];
+  columns: { id: PipelineStatus; label: string; accent: string }[];
   columnFilter: PipelineStatus | null;
   scheduledCalls: Record<string, ScheduledCall>;
   onMove: (brandId: number, status: PipelineStatus) => void;
@@ -245,7 +301,7 @@ function KanbanView({
   const dragBrandId = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<PipelineStatus | null>(null);
 
-  const visibleColumns = columnFilter ? COLUMNS.filter((c) => c.id === columnFilter) : COLUMNS;
+  const visibleColumns = columnFilter ? columns.filter((c) => c.id === columnFilter) : columns;
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
@@ -310,11 +366,13 @@ function KanbanView({
 
 function TableView({
   brands,
+  columns,
   scheduledCalls,
   onMove,
   onRowClick,
 }: {
   brands: Brand[];
+  columns: { id: PipelineStatus; label: string; accent: string }[];
   scheduledCalls: Record<string, ScheduledCall>;
   onMove: (brandId: number, status: PipelineStatus) => void;
   onRowClick: (brand: Brand) => void;
@@ -352,7 +410,7 @@ function TableView({
             const hubspotUrl = brand.HUBSPOT_COMPANY_ID ? `https://app.hubspot.com/contacts/21791298/company/${brand.HUBSPOT_COMPANY_ID}` : null;
             const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
             const isStuck = brand.DAYS_IN_STATUS > 7;
-            const col = COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
+            const col = columns.find((c) => c.id === brand.PIPELINE_STATUS);
             return (
               <tr key={brand.BRAND_ID} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer" }}
                 onClick={() => onRowClick(brand)}
@@ -363,7 +421,7 @@ function TableView({
                   <select value={brand.PIPELINE_STATUS} onChange={(e) => onMove(brand.BRAND_ID, e.target.value as PipelineStatus)}
                     className="rounded-full border-0 cursor-pointer px-2 py-0.5"
                     style={{ background: (col?.accent ?? "#333") + "22", color: col?.accent ?? "#fff", fontSize: "0.8rem" }}>
-                    {COLUMNS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    {columns.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                   </select>
                 </td>
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.SE_OWNER ?? "—"}</td>

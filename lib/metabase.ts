@@ -74,6 +74,8 @@ export interface Brand {
 }
 
 export type PipelineStatus =
+  | "not_started"
+  | "pending_review"
   | "products_approved_needs_call"
   | "code_snippets_available"
   | "collaborator_code_brand"
@@ -84,13 +86,16 @@ function computePipelineStatus(
   brand: Omit<Brand, "PIPELINE_STATUS" | "DAYS_IN_STATUS">,
   hasRecentWidgetViews: boolean,
   hasAnyWidgetViews: boolean
-): PipelineStatus | null {
+): PipelineStatus {
   if (hasRecentWidgetViews) return "live";
   if (hasAnyWidgetViews) return "was_live";
-  // No products yet — nothing to work with
-  if (brand.PRODUCTS_COUNT === 0) return null;
+  // No products yet — nothing to work with. Previously this (and the pending-review
+  // case below) returned null and got the brand excluded from the dashboard
+  // entirely. Now every partnered brand gets a status so it always shows up
+  // under "view all".
+  if (brand.PRODUCTS_COUNT === 0) return "not_started";
   // All products still pending — wait until at least one clears review
-  if (brand.HAS_PENDING_BOARD_REVIEW && !brand.HAS_APPROVED_PRODUCTS) return null;
+  if (brand.HAS_PENDING_BOARD_REVIEW && !brand.HAS_APPROVED_PRODUCTS) return "pending_review";
   // "collaborator_code_brand" is set manually via Notion override — no auto-detect
   // Share threshold met = code snippets available for self-serve
   if (brand.HAS_SHARE_THRESHOLD_MET) return "code_snippets_available";
