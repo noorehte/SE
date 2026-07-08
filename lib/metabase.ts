@@ -29,11 +29,18 @@ async function metabaseQuery(tableId: number, fields?: number[], filters?: unkno
 }
 
 export const WIDGET_TYPE_LABELS: Record<string, string> = {
-  gpt:     "Clinician AI",
-  quant:   "Embedded",
-  sticker: "Banner",
-  qual:    "Testimonials",
+  gpt:      "Clinician AI",
+  analysis: "Analysis",
+  quant:    "Embedded",
+  sticker:  "Banner",
+  qual:     "Testimonials",
 };
+
+export interface WidgetTypeStatus {
+  wentLiveAt: string | null; // first view date for this widget type
+  lastViewAt: string | null; // most recent view date for this widget type
+  isLive: boolean;           // viewed within the last 30 days
+}
 
 export interface Brand {
   BRAND_ID: number;
@@ -62,6 +69,7 @@ export interface Brand {
   PIPELINE_STATUS: PipelineStatus;
   DAYS_IN_STATUS: number;
   WIDGET_TYPES: string[];
+  WIDGET_STATUSES: Record<string, WidgetTypeStatus>;
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
 }
 
@@ -114,14 +122,15 @@ export async function getBrands(): Promise<Brand[]> {
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  // No explicit field list for table 203 here (unlike the other tables) — we
-  // need to find the is_brand_partner column by name below, and don't yet know
-  // its field ID the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, widgetRows, productRows] = await Promise.all([
+  // No explicit field list for table 203 or 201 here (unlike the other tables)
+  // — we need to find specific columns by name below, and don't yet know their
+  // field IDs the way we do for the columns we've been selecting explicitly.
+  const [onboardingRows, allStgBrandRows, widgetRows, productRows, allWidgetTypeRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
     metabaseQuery(464, WIDGET_FIELDS),
     metabaseQuery(202, PRODUCT_FIELDS),
+    metabaseQuery(201),
   ]);
 
   // Only brands flagged as an actual partner belong on the dashboard — table 203
@@ -176,10 +185,9 @@ export async function getBrands(): Promise<Brand[]> {
     });
   }
 
-  // Widget activity (WIDGET_TYPES will be empty until TYPE field ID is confirmed)
+  // Widget activity — overall brand-level live/was_live detection
   const recentWidgetBrands = new Set<number>();
   const anyWidgetBrands = new Set<number>();
-  const brandWidgetTypes = new Map<number, Set<string>>();
   const firstWidgetViewDate = new Map<number, string>(); // earliest date with views
   const lastWidgetViewDate = new Map<number, string>();  // most recent date with views
   for (const r of widgetRows) {
@@ -190,6 +198,41 @@ export async function getBrands(): Promise<Brand[]> {
       if (!prev || r.DAY < prev) firstWidgetViewDate.set(r.BRAND_ID, r.DAY);
       const prevLast = lastWidgetViewDate.get(r.BRAND_ID);
       if (!prevLast || r.DAY > prevLast) lastWidgetViewDate.set(r.BRAND_ID, r.DAY);
+    }
+  }
+
+  // Per-widget-type "went live" tracking, from table 201 (stg-widgets) —
+  // one row per widget, with its own first/last view dates already computed.
+  // Column names are detected by pattern rather than hardcoded field IDs,
+  // since we don't have those IDs confirmed the way we do for other tables.
+  const widgetStatusByBrand = new Map<number, Record<string, WidgetTypeStatus>>();
+  if (allWidgetTypeRows.length > 0) {
+    const sampleKeys = Object.keys(allWidgetTypeRows[0]);
+    const brandIdKey = sampleKeys.find((k: string) => /^(health_)?brand[_ ]?id$/i.test(k));
+    const typeKey = sampleKeys.find((k: string) => /presentation[_ ]?type/i.test(k)) ?? sampleKeys.find((k: string) => /^type$/i.test(k));
+    const firstViewKey = sampleKeys.find((k: string) => /first[_ ]?view/i.test(k));
+    const lastViewKey = sampleKeys.find((k: string) => /last[_ ]?view/i.test(k));
+
+    if (!brandIdKey || !typeKey || !firstViewKey || !lastViewKey) {
+      console.error(
+        "Could not find expected columns on table 201 (stg-widgets) for per-widget-type live tracking.",
+        { brandIdKey, typeKey, firstViewKey, lastViewKey, availableColumns: sampleKeys }
+      );
+    } else {
+      const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      for (const r of allWidgetTypeRows as Record<string, unknown>[]) {
+        const brandId = r[brandIdKey] as number | null;
+        const type = r[typeKey] as string | null;
+        if (brandId == null || !type) continue;
+
+        const wentLiveAt = (r[firstViewKey] as string | null) ?? null;
+        const lastViewAt = (r[lastViewKey] as string | null) ?? null;
+        const isLive = !!lastViewAt && new Date(lastViewAt).getTime() >= thirtyDaysAgoMs;
+
+        const existing = widgetStatusByBrand.get(brandId) ?? {};
+        existing[type] = { wentLiveAt, lastViewAt, isLive };
+        widgetStatusByBrand.set(brandId, existing);
+      }
     }
   }
 
@@ -262,7 +305,8 @@ export async function getBrands(): Promise<Brand[]> {
       HAS_REJECTED_BY_BOARD: rejectedByBoard.has(brandId),
       HAS_APPROVED_PRODUCTS: approvedProductBrands.has(brandId),
       HAS_SHARE_THRESHOLD_MET: shareThresholdMet.has(brandId),
-      WIDGET_TYPES: Array.from(brandWidgetTypes.get(brandId) ?? []),
+      WIDGET_TYPES: Object.keys(widgetStatusByBrand.get(brandId) ?? {}),
+      WIDGET_STATUSES: widgetStatusByBrand.get(brandId) ?? {},
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
     };
     const computedStatus = computePipelineStatus(

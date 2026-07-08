@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Brand, WIDGET_TYPE_LABELS } from "@/lib/metabase";
+import { Brand, WIDGET_TYPE_LABELS, WidgetTypeStatus } from "@/lib/metabase";
 import { COLUMNS, ScheduledCall } from "./Dashboard";
 import { SE_INFO } from "@/lib/se-info";
 import { X, ExternalLink, CalendarPlus, Copy, Check, Pencil } from "lucide-react";
@@ -18,6 +18,34 @@ const SEGMENT_OPTIONS = ["vip", "strategic", "enterprise", "mid_market"];
 const SEGMENT_LABELS: Record<string, string> = {
   vip: "VIP", strategic: "Strategic", enterprise: "Enterprise", mid_market: "Mid-Market",
 };
+// The 5 widget types we track go-live status for, in display order:
+// CAI, Analysis, Testimonials, Banner, Embedded.
+const TRACKED_WIDGET_TYPES = ["gpt", "analysis", "qual", "sticker", "quant"];
+
+function WidgetStatusRow({ type, status }: { type: string; status: WidgetTypeStatus | undefined }) {
+  const label = WIDGET_TYPE_LABELS[type] ?? type;
+  let display: React.ReactNode;
+  let color: string;
+  if (!status?.wentLiveAt) {
+    display = "Not live";
+    color = "rgba(255,255,255,0.3)";
+  } else {
+    const wentLive = new Date(status.wentLiveAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    if (status.isLive) {
+      display = `Live since ${wentLive}`;
+      color = "#4caf82";
+    } else {
+      display = `Went live ${wentLive} (inactive)`;
+      color = "#e0a95c";
+    }
+  }
+  return (
+    <div className="flex items-center justify-between gap-4 py-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <span style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.5)" }}>{label}</span>
+      <span style={{ fontSize: "0.8rem", color, textAlign: "right" }}>{display}</span>
+    </div>
+  );
+}
 
 function initials(name: string | null) {
   if (!name) return "—";
@@ -451,6 +479,14 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
             />
             <Row label="Share threshold met" value={brand.HAS_SHARE_THRESHOLD_MET ? "Yes" : "No"} />
             <EditableText brandId={brand.BRAND_ID} field="COLLABORATOR_CODE" label="Collaborator code" value={brand.COLLABORATOR_CODE} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { COLLABORATOR_CODE: v })} />
+          </div>
+
+          {/* Widget Status — per-type go-live tracking */}
+          <div className="mb-6">
+            <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Widget Status</div>
+            {TRACKED_WIDGET_TYPES.map((type) => (
+              <WidgetStatusRow key={type} type={type} status={brand.WIDGET_STATUSES?.[type]} />
+            ))}
           </div>
 
           {/* Links */}
