@@ -209,6 +209,17 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
         ) && (
           <div className="px-8 py-3 flex items-center gap-2 flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
             <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.3)", marginRight: "4px" }}>Widget</span>
+            <button
+              onClick={() => setWidgetTypeFilter(null)}
+              className="px-3 py-1 rounded-full text-xs font-medium transition-all"
+              style={{
+                background: widgetTypeFilter === null ? "rgba(114,164,191,0.25)" : "rgba(255,255,255,0.07)",
+                color: widgetTypeFilter === null ? "#72a4bf" : "rgba(255,255,255,0.5)",
+                border: `1px solid ${widgetTypeFilter === null ? "rgba(114,164,191,0.5)" : "rgba(255,255,255,0.1)"}`,
+              }}
+            >
+              All <span style={{ opacity: 0.6 }}>{seFiltered.length}</span>
+            </button>
             {Object.entries(WIDGET_TYPE_LABELS).map(([key, label]) => {
               const count = seFiltered.filter(b => b.WIDGET_TYPES.includes(key)).length;
               if (count === 0) return null;
