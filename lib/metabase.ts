@@ -8,9 +8,8 @@ async function metabaseQuery(tableId: number, fields?: number[], filters?: unkno
   const query: Record<string, unknown> = { "source-table": tableId };
   if (fields) query["fields"] = fields.map((id) => ["field", id, null]);
   if (filters) query["filter"] = filters;
-  // Metabase's /api/dataset defaults to a 2000-row cap. Tables with more rows
-  // than that (e.g. table 201, which has a row per widget *version* including
-  // old/discarded ones) get silently truncated unless we ask for more.
+  // Metabase's /api/dataset defaults to a 2000-row cap and silently truncates
+  // beyond it — pass an explicit limit for any table that might exceed that.
   if (limit) query["limit"] = limit;
 
   const res = await fetch(`${METABASE_URL}/api/dataset`, {
@@ -32,6 +31,61 @@ async function metabaseQuery(tableId: number, fields?: number[], filters?: unkno
   );
 }
 
+// Widget live-status is queried directly from the app's Postgres database via
+// Grafana's datasource proxy, rather than through Metabase's stg-widgets
+// mirror (table 201). Two reasons: (1) Metabase's /api/dataset caps results at
+// 2000 rows with no pagination, and the widgets table has 10k+ live rows, so
+// table 201 was silently truncated; (2) querying Postgres directly lets us
+// aggregate per brand+type in SQL instead of hand-rolling dedup logic over a
+// row-per-widget-version dataset.
+async function queryGrafanaPostgres(rawSql: string) {
+  const GRAFANA_URL = process.env.GRAFANA_URL!;
+  const GRAFANA_API_KEY = process.env.GRAFANA_API_KEY!;
+  const GRAFANA_WIDGETS_DATASOURCE_UID = process.env.GRAFANA_WIDGETS_DATASOURCE_UID!;
+
+  const res = await fetch(`${GRAFANA_URL}/api/ds/query`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${GRAFANA_API_KEY}`,
+    },
+    body: JSON.stringify({
+      queries: [
+        {
+          refId: "A",
+          datasource: { type: "postgres", uid: GRAFANA_WIDGETS_DATASOURCE_UID },
+          rawSql,
+          format: "table",
+        },
+      ],
+      // Grafana requires a time range on every query even when the SQL has no
+      // $__timeFilter macro — the range itself is unused here.
+      from: "now-5y",
+      to: "now",
+    }),
+    cache: "no-store",
+  });
+
+  const data = await res.json();
+  const frame = data?.results?.A?.frames?.[0];
+  if (!frame) throw new Error(`Grafana query failed: ${JSON.stringify(data)}`);
+  if (frame.error) throw new Error(`Grafana query error: ${frame.error}`);
+
+  const fieldNames: string[] = frame.schema.fields.map((f: { name: string }) => f.name);
+  const values: unknown[][] = frame.data.values; // one array per column
+  const rowCount = values[0]?.length ?? 0;
+
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 0; i < rowCount; i++) {
+    const row: Record<string, unknown> = {};
+    fieldNames.forEach((name, colIdx) => {
+      row[name] = values[colIdx][i];
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
 export const WIDGET_TYPE_LABELS: Record<string, string> = {
   gpt:      "Clinician AI",
   analysis: "Analysis",
@@ -41,9 +95,12 @@ export const WIDGET_TYPE_LABELS: Record<string, string> = {
 };
 
 export interface WidgetTypeStatus {
-  wentLiveAt: string | null; // first view date for this widget type
-  lastViewAt: string | null; // most recent view date for this widget type
-  isLive: boolean;           // viewed within the last 30 days
+  wentLiveAt: string | null;     // first-ever view date for this widget type
+  wentInactiveAt: string | null; // set when the widget stops getting views (cleared back
+                                  // to null once fresh views come in) — mirrors the Rails
+                                  // `last_view_date` column's actual semantics, which is
+                                  // NOT "most recent view" despite the name.
+  isLive: boolean;                // has been viewed at least once and hasn't gone inactive
 }
 
 export interface Brand {
@@ -131,18 +188,32 @@ export async function getBrands(): Promise<Brand[]> {
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  // No explicit field list for table 203 or 201 here (unlike the other tables)
-  // — we need to find specific columns by name below, and don't yet know their
+  // No explicit field list for table 203 here (unlike the other tables) — we
+  // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, widgetRows, productRows, allWidgetTypeRows] = await Promise.all([
+  const [onboardingRows, allStgBrandRows, widgetRows, productRows, widgetStatusRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
     metabaseQuery(464, WIDGET_FIELDS),
     metabaseQuery(202, PRODUCT_FIELDS),
-    // Table 201 has a row per widget *version* (including old/discarded ones),
-    // so it can easily exceed Metabase's default 2000-row API cap — request
-    // enough rows that we're not silently truncating real widgets.
-    metabaseQuery(201, undefined, undefined, 50000),
+    // Per-brand, per-widget-type live status, straight from Postgres via
+    // Grafana — see queryGrafanaPostgres() above for why this replaced
+    // Metabase table 201. Aggregated here in SQL rather than client-side:
+    // a brand+type is "live" if ANY of its (non-discarded) widget-version
+    // rows currently has first_view_date set and last_view_date null — this
+    // mirrors the CS team's own Grafana "Widget Statuses" dashboard query.
+    queryGrafanaPostgres(`
+      select
+        w.health_brand_id,
+        w.presentation_type,
+        bool_or(w.first_view_date is not null and w.last_view_date is null) as is_live,
+        max(w.first_view_date) filter (where w.first_view_date is not null and w.last_view_date is null) as live_first_view_date,
+        max(w.first_view_date) as latest_first_view_date,
+        max(w.last_view_date) as latest_went_inactive_date
+      from widgets w
+      where w.discarded_at is null
+      group by w.health_brand_id, w.presentation_type
+    `),
   ]);
 
   // Only brands flagged as an actual partner belong on the dashboard — table 203
@@ -213,121 +284,32 @@ export async function getBrands(): Promise<Brand[]> {
     }
   }
 
-  // Per-widget-type "went live" tracking, from table 201 (stg-widgets) —
-  // one row per widget, with its own first/last view dates already computed.
-  // Column names are detected by pattern rather than hardcoded field IDs,
-  // since we don't have those IDs confirmed the way we do for other tables.
+  // Per-widget-type "went live" tracking. `widgetStatusRows` is already
+  // aggregated per brand+type in SQL (see the queryGrafanaPostgres call
+  // above), so this is just a straight mapping — epoch-ms timestamps from
+  // Grafana's Postgres datasource, no per-row dedup or discard filtering
+  // needed here (that's all handled in the query itself).
   const widgetStatusByBrand = new Map<number, Record<string, WidgetTypeStatus>>();
-  if (allWidgetTypeRows.length > 0) {
-    const sampleKeys = Object.keys(allWidgetTypeRows[0]);
-    const brandIdKey = sampleKeys.find((k: string) => /^(health_)?brand[_ ]?id$/i.test(k));
-    const typeKey = sampleKeys.find((k: string) => /presentation[_ ]?type/i.test(k)) ?? sampleKeys.find((k: string) => /^type$/i.test(k));
-    const firstViewKey = sampleKeys.find((k: string) => /first[_ ]?view/i.test(k));
-    const lastViewKey = sampleKeys.find((k: string) => /last[_ ]?view/i.test(k));
-    // Table 201 keeps a row per widget *version* — discarded (soft-deleted)
-    // versions shouldn't count toward live status, and old versions of a
-    // still-active widget shouldn't overwrite a newer, actually-live one.
-    const discardedAtKey = sampleKeys.find((k: string) => /discarded[_ ]?at/i.test(k));
+  let widgetStatusLiveCount = 0;
+  for (const r of widgetStatusRows as Record<string, unknown>[]) {
+    const brandId = r.health_brand_id as number | null;
+    const type = r.presentation_type as string | null;
+    if (brandId == null || !type) continue;
 
-    if (!brandIdKey || !typeKey || !firstViewKey || !lastViewKey) {
-      console.error(
-        "Could not find expected columns on table 201 (stg-widgets) for per-widget-type live tracking.",
-        { brandIdKey, typeKey, firstViewKey, lastViewKey, availableColumns: sampleKeys }
-      );
-    } else {
-      // Metabase can return timestamps as ISO strings, epoch seconds, or epoch
-      // milliseconds depending on the underlying column type — this was the
-      // root cause of "isLive" always coming back false (a raw epoch-seconds
-      // number like 1750000000 was being passed straight to `new Date()`,
-      // which treats numbers as milliseconds and lands in 1970, i.e. always
-      // "more than 30 days ago"). Normalize everything to an ISO string.
-      function parseMetabaseTimestamp(raw: unknown): { iso: string | null; ms: number | null } {
-        if (raw == null || raw === "") return { iso: null, ms: null };
-        let ms: number;
-        if (typeof raw === "number") {
-          // Epoch seconds (~10 digits) vs epoch milliseconds (~13 digits).
-          ms = raw > 1e12 ? raw : raw * 1000;
-        } else {
-          const str = String(raw);
-          if (/^\d+$/.test(str)) {
-            const num = Number(str);
-            ms = num > 1e12 ? num : num * 1000;
-          } else {
-            ms = Date.parse(str);
-          }
-        }
-        if (!Number.isFinite(ms)) return { iso: null, ms: null };
-        return { iso: new Date(ms).toISOString(), ms };
-      }
+    const isLive = !!r.is_live;
+    const toIso = (ms: unknown) => (typeof ms === "number" ? new Date(ms).toISOString() : null);
+    const wentLiveAt = isLive ? toIso(r.live_first_view_date) : toIso(r.latest_first_view_date);
+    const wentInactiveAt = isLive ? null : toIso(r.latest_went_inactive_date);
+    if (isLive) widgetStatusLiveCount++;
 
-      let loggedPopulatedSample = false;
-      let rowsWithLastView = 0;
-      let rowsLive = 0;
-      let rowsDiscarded = 0;
-      let rowsSuperseded = 0;
-      // Track the raw last-view ms we picked per brand+type, so a later row
-      // for the same brand+type only overwrites an earlier one if it's
-      // actually more recent (rather than whichever row happens to come last
-      // in Metabase's return order, which could be an old, no-longer-live
-      // version stomping on a genuinely live one).
-      const bestLastViewMsByKey = new Map<string, number>();
-      const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      for (const r of allWidgetTypeRows as Record<string, unknown>[]) {
-        const brandId = r[brandIdKey] as number | null;
-        const type = r[typeKey] as string | null;
-        if (brandId == null || !type) continue;
-
-        if (discardedAtKey && r[discardedAtKey] != null && r[discardedAtKey] !== "") {
-          rowsDiscarded++;
-          continue;
-        }
-
-        const first = parseMetabaseTimestamp(r[firstViewKey]);
-        const last = parseMetabaseTimestamp(r[lastViewKey]);
-        const isLive = last.ms != null && last.ms >= thirtyDaysAgoMs;
-        if (last.ms != null) rowsWithLastView++;
-        if (isLive) rowsLive++;
-
-        // Log the first row that actually HAS a last-view value — logging row
-        // zero is useless since most widgets have never been viewed and are
-        // null, which told us nothing about the date format on populated rows.
-        if (!loggedPopulatedSample && last.ms != null) {
-          console.log("Sample POPULATED table 201 row for live-tracking date parsing:", {
-            brandId,
-            type,
-            rawFirstView: r[firstViewKey],
-            rawLastView: r[lastViewKey],
-            parsedFirstViewIso: first.iso,
-            parsedLastViewIso: last.iso,
-            thirtyDaysAgoIso: new Date(thirtyDaysAgoMs).toISOString(),
-            computedIsLive: isLive,
-          });
-          loggedPopulatedSample = true;
-        }
-
-        const key = `${brandId}::${type}`;
-        const priorMs = bestLastViewMsByKey.get(key);
-        if (priorMs != null && (last.ms ?? -Infinity) <= priorMs) {
-          // A row we've already kept for this brand+type has a more recent
-          // (or equal) last-view — this row is an older widget version, skip it.
-          rowsSuperseded++;
-          continue;
-        }
-        bestLastViewMsByKey.set(key, last.ms ?? -Infinity);
-
-        const existing = widgetStatusByBrand.get(brandId) ?? {};
-        existing[type] = { wentLiveAt: first.iso, lastViewAt: last.iso, isLive };
-        widgetStatusByBrand.set(brandId, existing);
-      }
-      console.log("Table 201 live-tracking summary:", {
-        totalRows: allWidgetTypeRows.length,
-        rowsDiscarded,
-        rowsSuperseded,
-        rowsWithLastView,
-        rowsComputedLive: rowsLive,
-      });
-    }
+    const existing = widgetStatusByBrand.get(brandId) ?? {};
+    existing[type] = { wentLiveAt, wentInactiveAt, isLive };
+    widgetStatusByBrand.set(brandId, existing);
   }
+  console.log("Widget live-tracking summary (via Grafana/Postgres):", {
+    brandTypeGroups: widgetStatusRows.length,
+    liveCount: widgetStatusLiveCount,
+  });
 
   // Product status + count per brand — PRODUCTS_COUNT is computed directly from
   // table 202 (rather than trusted from table 447) so it works the same way for
