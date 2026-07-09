@@ -33,23 +33,39 @@ export interface OverrideEntry {
 export async function getAllOverrides(): Promise<Record<string, OverrideEntry>> {
   const result: Record<string, OverrideEntry> = {};
   try {
-    const data = await notionRequest(`/databases/${DB_ID}/query`, "POST", { page_size: 100 });
-    for (const page of data.results ?? []) {
-      const brandId = page.properties["Brand ID"]?.title?.[0]?.plain_text?.trim();
-      if (!brandId) continue;
-      const status = page.properties["Status"]?.rich_text?.[0]?.plain_text?.trim() || null;
-      const changedAt = page.properties["Status Changed At"]?.rich_text?.[0]?.plain_text?.trim() || null;
-      const fieldsRaw = page.properties["Field Overrides"]?.rich_text?.[0]?.plain_text?.trim();
-      let fields: Record<string, string> = {};
-      if (fieldsRaw) {
-        try { fields = JSON.parse(fieldsRaw); } catch { /* ignore malformed */ }
+    // Notion's query API caps each page at 100 results and needs an explicit
+    // cursor loop to get the rest — this was missing, so once the overrides
+    // database grew past 100 rows, any override past that point (most
+    // recently touched brands tend to land there) was silently invisible on
+    // read even though the write itself succeeded. "Collaborator Code Brand"
+    // has no auto-detection path at all (it's override-only), so a dropped
+    // override for it has nowhere else to fall but back to whatever the
+    // brand's real data computes to — which is exactly the reported "doesn't
+    // persist on refresh" symptom.
+    let cursor: string | undefined;
+    do {
+      const data = await notionRequest(`/databases/${DB_ID}/query`, "POST", {
+        page_size: 100,
+        ...(cursor ? { start_cursor: cursor } : {}),
+      });
+      for (const page of data.results ?? []) {
+        const brandId = page.properties["Brand ID"]?.title?.[0]?.plain_text?.trim();
+        if (!brandId) continue;
+        const status = page.properties["Status"]?.rich_text?.[0]?.plain_text?.trim() || null;
+        const changedAt = page.properties["Status Changed At"]?.rich_text?.[0]?.plain_text?.trim() || null;
+        const fieldsRaw = page.properties["Field Overrides"]?.rich_text?.[0]?.plain_text?.trim();
+        let fields: Record<string, string> = {};
+        if (fieldsRaw) {
+          try { fields = JSON.parse(fieldsRaw); } catch { /* ignore malformed */ }
+        }
+        if (status || Object.keys(fields).length > 0) {
+          result[brandId] = { status: status as PipelineStatus | null, changedAt, fields };
+        }
       }
-      if (status || Object.keys(fields).length > 0) {
-        result[brandId] = { status: status as PipelineStatus | null, changedAt, fields };
-      }
-    }
+      cursor = data.has_more ? data.next_cursor : undefined;
+    } while (cursor);
   } catch {
-    // return empty on error — non-fatal
+    // return whatever was fetched so far — non-fatal
   }
   return result;
 }
