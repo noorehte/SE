@@ -12,6 +12,7 @@ const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
   collaborator_code_brand: "SE implementing",
   live: null,
   was_live: "Re-activation needed",
+  churned: null,
 };
 
 const SEGMENT_STYLES: Record<string, { label: string; color: string }> = {

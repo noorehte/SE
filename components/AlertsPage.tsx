@@ -23,6 +23,9 @@ const ALERT_CONFIGS: { type: AlertType; label: string; description: string; colo
 function buildAlerts(brands: Brand[]): Alert[] {
   const alerts: Alert[] = [];
   for (const brand of brands) {
+    // Churned brands are done, not stuck — being 0-SE / 0-products / long
+    // "in status" is just what churn looks like, not something to act on.
+    if (brand.PIPELINE_STATUS === "churned") continue;
     if (brand.DAYS_IN_STATUS > 7)      alerts.push({ type: "stuck",       brand, message: `${brand.DAYS_IN_STATUS} days in "${ALL_COLUMNS.find(c => c.id === brand.PIPELINE_STATUS)?.label ?? brand.PIPELINE_STATUS}"` });
     if (!brand.SE_OWNER)               alerts.push({ type: "no_se",       brand, message: "No SE owner assigned" });
     if (brand.PRODUCTS_COUNT === 0)    alerts.push({ type: "no_products", brand, message: "0 products in portal" });

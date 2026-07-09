@@ -36,6 +36,10 @@ export const ALL_COLUMNS: { id: PipelineStatus; label: string; accent: string }[
   { id: "not_started",                  label: "Not Started — No Products Yet",            accent: "#5a6b78" },
   { id: "pending_review",               label: "Pending Board Review",                     accent: "#b08bd6" },
   ...COLUMNS,
+  // Soft-deleted on health_brands (discarded_at set) — takes priority over
+  // every other status, so a churned brand never shows as e.g. "Live" or
+  // "Code Snippets Available" just because other data hasn't caught up.
+  { id: "churned",                      label: "Churned",                                  accent: "#7a7a7a" },
 ];
 
 const SE_OWNERS = ["maha", "noor", "naumaan"];

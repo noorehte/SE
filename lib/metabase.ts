@@ -142,13 +142,21 @@ export type PipelineStatus =
   | "code_snippets_available"
   | "collaborator_code_brand"
   | "live"
-  | "was_live";
+  | "was_live"
+  | "churned";
 
 function computePipelineStatus(
   brand: Omit<Brand, "PIPELINE_STATUS" | "DAYS_IN_STATUS" | "STATUS_ENTERED_AT">,
   hasLiveWidget: boolean,
-  hasWidgetHistory: boolean
+  hasWidgetHistory: boolean,
+  isChurned: boolean
 ): PipelineStatus {
+  // A brand can be soft-deleted (discarded_at set on health_brands) while
+  // still flagged is_partner=true — e.g. Vital GOAT, and ~90 others. That
+  // status takes priority over everything else: a churned brand shouldn't
+  // sit in "Code Snippets Available" or even "Live" just because its widget
+  // data hasn't caught up yet.
+  if (isChurned) return "churned";
   if (hasLiveWidget) return "live";
   if (hasWidgetHistory) return "was_live";
   // No products yet — nothing to work with. Previously this (and the pending-review
@@ -189,7 +197,7 @@ export async function getBrands(): Promise<Brand[]> {
   // No explicit field list for table 203 here (unlike the other tables) — we
   // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows] = await Promise.all([
+  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
     metabaseQuery(202, PRODUCT_FIELDS),
@@ -210,6 +218,17 @@ export async function getBrands(): Promise<Brand[]> {
       from widgets w
       where w.discarded_at is null
       group by w.health_brand_id, w.presentation_type
+    `),
+    // Churned brands: soft-deleted (discarded_at set) on health_brands. This
+    // does NOT track with is_partner — ~90 brands are discarded but still
+    // have is_partner=true (e.g. Vital GOAT), so table 203's is_partner
+    // filter alone lets churned brands keep showing up as active. Queried
+    // straight from Postgres rather than trusting table 203 to mirror
+    // discarded_at faithfully.
+    queryGrafanaPostgres(`
+      select id as health_brand_id, discarded_at
+      from health_brands
+      where discarded_at is not null
     `),
   ]);
 
@@ -291,6 +310,15 @@ export async function getBrands(): Promise<Brand[]> {
     brandTypeGroups: widgetStatusRows.length,
     liveCount: widgetStatusLiveCount,
   });
+
+  const churnedAtByBrand = new Map<number, string>();
+  for (const r of churnedBrandRows as Record<string, unknown>[]) {
+    const brandId = r.health_brand_id as number | null;
+    if (brandId == null) continue;
+    if (typeof r.discarded_at === "number") {
+      churnedAtByBrand.set(brandId, new Date(r.discarded_at).toISOString());
+    }
+  }
 
   // Brand-level live/was_live status is derived directly from the per-type
   // data above — NOT from a separate 30-day-rolling-window view count. That
@@ -397,7 +425,8 @@ export async function getBrands(): Promise<Brand[]> {
     const computedStatus = computePipelineStatus(
       brandWithExtra,
       brandHasLiveWidget.has(brandId),
-      brandHasWidgetHistory.has(brandId)
+      brandHasWidgetHistory.has(brandId),
+      churnedAtByBrand.has(brandId)
     );
     const pipelineStatus = override?.status ?? computedStatus;
     if (!pipelineStatus) return null; // excluded from board
@@ -406,6 +435,10 @@ export async function getBrands(): Promise<Brand[]> {
     let statusEnteredAt: number;
     if (override?.changedAt) {
       statusEnteredAt = new Date(override.changedAt).getTime();
+    } else if (pipelineStatus === "churned") {
+      // "Churned" since the brand was discarded
+      const d = churnedAtByBrand.get(brandId);
+      statusEnteredAt = d ? new Date(d).getTime() : now;
     } else if (pipelineStatus === "live") {
       // "Live" since the earliest of its currently-live widget types went live
       const d = brandFirstLiveDate.get(brandId);
