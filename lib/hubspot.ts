@@ -85,6 +85,45 @@ export async function getCompanyContactEmails(hubspotCompanyId: number): Promise
   }
 }
 
+// HubSpot's `churn_date` company property (label "Pause/Churn date") is the
+// business-side churn signal set by CS/Sales — it's more complete than the
+// app's own health_brands.discarded_at, which only reflects an in-app soft
+// delete. A brand can be churned commercially (churn_date set) while never
+// having been discarded in the app at all (e.g. Scandinavian Biolabs), so
+// both signals need to be checked. Returns a map of HubSpot company ID ->
+// churn_date (as a plain "YYYY-MM-DD" string, per HubSpot's date property format).
+export async function getChurnDatesByCompanyId(): Promise<Map<number, string>> {
+  const result = new Map<number, string>();
+  if (!getKey()) return result;
+
+  try {
+    let after: string | undefined;
+    do {
+      const res = await fetch(`${BASE}/crm/v3/objects/companies/search`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filterGroups: [{ filters: [{ propertyName: "churn_date", operator: "HAS_PROPERTY" }] }],
+          properties: ["churn_date"],
+          limit: 200,
+          after,
+        }),
+      });
+      if (!res.ok) break;
+      const data = await res.json();
+      for (const r of (data.results ?? []) as { id: string; properties: { churn_date?: string } }[]) {
+        const id = Number(r.id);
+        const churnDate = r.properties?.churn_date;
+        if (id && churnDate) result.set(id, churnDate);
+      }
+      after = data.paging?.next?.after;
+    } while (after);
+  } catch {
+    // non-fatal — brands still get churn detection via discarded_at alone
+  }
+  return result;
+}
+
 // Returns true if the company has at least one "Closed Won" deal in HubSpot.
 // Fails open (returns true) if there's no HubSpot ID or the API call fails.
 export async function isCompanyClosedWon(hubspotCompanyId: number): Promise<boolean> {

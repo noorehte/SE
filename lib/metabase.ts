@@ -1,4 +1,5 @@
 import { getAllOverrides, OverrideEntry } from "@/lib/overrides";
+import { getChurnDatesByCompanyId } from "@/lib/hubspot";
 
 async function metabaseQuery(tableId: number, fields?: number[], filters?: unknown[], limit?: number) {
   // Read at request time — module-level access gets baked in as undefined for Sensitive vars
@@ -197,7 +198,7 @@ export async function getBrands(): Promise<Brand[]> {
   // No explicit field list for table 203 here (unlike the other tables) — we
   // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows] = await Promise.all([
+  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, hubspotChurnDateByCompanyId] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
     metabaseQuery(202, PRODUCT_FIELDS),
@@ -230,6 +231,13 @@ export async function getBrands(): Promise<Brand[]> {
       from health_brands
       where discarded_at is not null
     `),
+    // Second, more complete churn signal: HubSpot's own `churn_date` company
+    // property (set by CS/Sales), which catches brands that churned
+    // commercially without ever being soft-deleted in the app — e.g.
+    // Scandinavian Biolabs has churn_date set but discarded_at is null.
+    // 202 HubSpot companies have churn_date set vs. 183 discarded_at rows in
+    // the app DB, and the two sets don't fully overlap.
+    getChurnDatesByCompanyId(),
   ]);
 
   // Only brands flagged as an actual partner belong on the dashboard — table 203
@@ -311,12 +319,15 @@ export async function getBrands(): Promise<Brand[]> {
     liveCount: widgetStatusLiveCount,
   });
 
-  const churnedAtByBrand = new Map<number, string>();
+  // App-side churn signal (discarded_at on health_brands) — combined with the
+  // HubSpot churn_date signal inside buildBrand, where HUBSPOT_COMPANY_ID is
+  // available, since the two are keyed differently (brand ID vs. HubSpot ID).
+  const appDiscardedAtByBrand = new Map<number, string>();
   for (const r of churnedBrandRows as Record<string, unknown>[]) {
     const brandId = r.health_brand_id as number | null;
     if (brandId == null) continue;
     if (typeof r.discarded_at === "number") {
-      churnedAtByBrand.set(brandId, new Date(r.discarded_at).toISOString());
+      appDiscardedAtByBrand.set(brandId, new Date(r.discarded_at).toISOString());
     }
   }
 
@@ -422,11 +433,25 @@ export async function getBrands(): Promise<Brand[]> {
       WIDGET_STATUSES: widgetStatusByBrand.get(brandId) ?? {},
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
     };
+
+    // Combine both churn signals — app-side discarded_at and HubSpot's
+    // churn_date — and take whichever is earlier when both are set, so
+    // DAYS_IN_STATUS reflects how long the brand has actually been churned
+    // rather than whenever the second signal happened to catch up.
+    const appDiscardedAt = appDiscardedAtByBrand.get(brandId) ?? null;
+    const hubspotChurnDateRaw = brandWithExtra.HUBSPOT_COMPANY_ID
+      ? hubspotChurnDateByCompanyId.get(brandWithExtra.HUBSPOT_COMPANY_ID) ?? null
+      : null;
+    const hubspotChurnAt = hubspotChurnDateRaw && Number.isFinite(Date.parse(hubspotChurnDateRaw))
+      ? new Date(hubspotChurnDateRaw).toISOString()
+      : null;
+    const churnedAt = [appDiscardedAt, hubspotChurnAt].filter((d): d is string => d != null).sort()[0] ?? null;
+
     const computedStatus = computePipelineStatus(
       brandWithExtra,
       brandHasLiveWidget.has(brandId),
       brandHasWidgetHistory.has(brandId),
-      churnedAtByBrand.has(brandId)
+      churnedAt != null
     );
     const pipelineStatus = override?.status ?? computedStatus;
     if (!pipelineStatus) return null; // excluded from board
@@ -436,9 +461,8 @@ export async function getBrands(): Promise<Brand[]> {
     if (override?.changedAt) {
       statusEnteredAt = new Date(override.changedAt).getTime();
     } else if (pipelineStatus === "churned") {
-      // "Churned" since the brand was discarded
-      const d = churnedAtByBrand.get(brandId);
-      statusEnteredAt = d ? new Date(d).getTime() : now;
+      // "Churned" since the earlier of discarded_at / HubSpot churn_date
+      statusEnteredAt = churnedAt ? new Date(churnedAt).getTime() : now;
     } else if (pipelineStatus === "live") {
       // "Live" since the earliest of its currently-live widget types went live
       const d = brandFirstLiveDate.get(brandId);
