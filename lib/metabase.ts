@@ -193,15 +193,23 @@ export async function getBrands(): Promise<Brand[]> {
     3407, // SUBMITTED_TO_MAB
   ];
 
-  const PRODUCT_FIELDS = [738, 731, 729];    // HEALTH_BRAND_ID, STATUS, DATE_PASSED_PROVIDER_THRESHOLD
-
   // No explicit field list for table 203 here (unlike the other tables) — we
   // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
   const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, hubspotChurnDateByCompanyId] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
-    metabaseQuery(202, PRODUCT_FIELDS),
+    // health_brand_products has 5,900+ rows — table 202 (Metabase's mirror)
+    // hits the same 2000-row /api/dataset cap that bit table 201. That
+    // silently truncated newer brands' products entirely (e.g. Well Mist,
+    // created May 2026 — 4 published products in Postgres, 0 via table 202),
+    // which zeroes PRODUCTS_COUNT and misclassifies the brand as
+    // "not_started" even though its products are fully approved. Queried
+    // directly from Postgres via Grafana instead, same as the widgets fix.
+    queryGrafanaPostgres(`
+      select health_brand_id, status, date_passed_provider_threshold
+      from health_brand_products
+    `),
     // Per-brand, per-widget-type live status, straight from Postgres via
     // Grafana — see queryGrafanaPostgres() above for why this replaced
     // Metabase table 201. Aggregated here in SQL rather than client-side:
@@ -361,24 +369,30 @@ export async function getBrands(): Promise<Brand[]> {
   }
 
   // Product status + count per brand — PRODUCTS_COUNT is computed directly from
-  // table 202 (rather than trusted from table 447) so it works the same way for
-  // every brand, whether or not it has an onboarding-portal record.
+  // health_brand_products (rather than trusted from table 447) so it works the
+  // same way for every brand, whether or not it has an onboarding-portal record.
   const pendingBoardReview = new Set<number>();
   const rejectedByBoard = new Set<number>();
   const approvedProductBrands = new Set<number>(); // has at least one approved product
   const shareThresholdMet = new Set<number>();
   const firstThresholdDate = new Map<number, string>(); // when share threshold was first met
   const productCountByBrand = new Map<number, number>();
-  for (const r of productRows) {
-    productCountByBrand.set(r.HEALTH_BRAND_ID, (productCountByBrand.get(r.HEALTH_BRAND_ID) ?? 0) + 1);
-    if (r.STATUS === "pending_board_review") pendingBoardReview.add(r.HEALTH_BRAND_ID);
-    else if (r.STATUS === "rejected_by_board") rejectedByBoard.add(r.HEALTH_BRAND_ID);
-    else approvedProductBrands.add(r.HEALTH_BRAND_ID); // any other status = approved
-    if (r.DATE_PASSED_PROVIDER_THRESHOLD) {
-      shareThresholdMet.add(r.HEALTH_BRAND_ID);
-      const prev = firstThresholdDate.get(r.HEALTH_BRAND_ID);
-      if (!prev || r.DATE_PASSED_PROVIDER_THRESHOLD < prev) {
-        firstThresholdDate.set(r.HEALTH_BRAND_ID, r.DATE_PASSED_PROVIDER_THRESHOLD);
+  for (const r of productRows as Record<string, unknown>[]) {
+    const brandId = r.health_brand_id as number | null;
+    if (brandId == null) continue;
+    const status = r.status as string | null;
+    const thresholdMs = r.date_passed_provider_threshold as number | null;
+
+    productCountByBrand.set(brandId, (productCountByBrand.get(brandId) ?? 0) + 1);
+    if (status === "pending_board_review") pendingBoardReview.add(brandId);
+    else if (status === "rejected_by_board") rejectedByBoard.add(brandId);
+    else approvedProductBrands.add(brandId); // any other status = approved
+    if (typeof thresholdMs === "number") {
+      const thresholdIso = new Date(thresholdMs).toISOString();
+      shareThresholdMet.add(brandId);
+      const prev = firstThresholdDate.get(brandId);
+      if (!prev || thresholdIso < prev) {
+        firstThresholdDate.set(brandId, thresholdIso);
       }
     }
   }
