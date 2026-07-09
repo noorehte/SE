@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
+import { Brand, PipelineStatus, WIDGET_TYPE_LABELS } from "@/lib/metabase";
 import BrandCard from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
 import { LayoutGrid, List, RefreshCw, Search } from "lucide-react";
@@ -36,10 +36,6 @@ export const ALL_COLUMNS: { id: PipelineStatus; label: string; accent: string }[
   { id: "not_started",                  label: "Not Started — No Products Yet",            accent: "#5a6b78" },
   { id: "pending_review",               label: "Pending Board Review",                     accent: "#b08bd6" },
   ...COLUMNS,
-  // Soft-deleted on health_brands (discarded_at set) — takes priority over
-  // every other status, so a churned brand never shows as e.g. "Live" or
-  // "Code Snippets Available" just because other data hasn't caught up.
-  { id: "churned",                      label: "Churned",                                  accent: "#7a7a7a" },
 ];
 
 const SE_OWNERS = ["maha", "noor", "naumaan"];
@@ -55,12 +51,6 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   const [loading, setLoading] = useState(false);
   const [widgetTypeFilter, setWidgetTypeFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  // Filters brands to ones whose current status was entered within [dateFrom, dateTo]
-  // (inclusive, either end optional) — added because "Live" / "Was Live" got a lot
-  // bigger once widget status started reflecting real per-widget data instead of a
-  // 30-day rolling view-count window, and the raw column got too long to scan.
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   // When on, the Kanban board adds the "Not Started" / "Pending Board Review"
   // columns and the stat cards/table include those brands too — otherwise
   // brands with no actionable status are hidden from the default view.
@@ -74,34 +64,22 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
 
   const statFiltered = statFilter === "all" ? seFiltered
     : statFilter === "in_progress" ? seFiltered.filter(b => !["live", "was_live"].includes(b.PIPELINE_STATUS))
-    : statFilter === "stuck" ? seFiltered.filter(isBrandStuck)
+    : statFilter === "stuck" ? seFiltered.filter(b => b.DAYS_IN_STATUS > 7)
     : seFiltered.filter(b => b.PIPELINE_STATUS === "live");
 
   const widgetFiltered = widgetTypeFilter
     ? statFiltered.filter(b => b.WIDGET_TYPES.includes(widgetTypeFilter))
     : statFiltered;
 
-  // Date range is compared against STATUS_ENTERED_AT — i.e. "Live since" /
-  // "Was live since" / whichever date the brand entered its current column —
-  // not brand creation date, so it lines up with what's shown on each card.
-  const dateFiltered = (dateFrom || dateTo)
-    ? widgetFiltered.filter((b) => {
-        const entered = b.STATUS_ENTERED_AT.slice(0, 10); // yyyy-mm-dd
-        if (dateFrom && entered < dateFrom) return false;
-        if (dateTo && entered > dateTo) return false;
-        return true;
-      })
-    : widgetFiltered;
-
   // Outside of "View all", keep the board scoped to the 5 actionable statuses
   // even though getBrands() now returns every partnered brand.
   const activeColumns = viewAll ? ALL_COLUMNS : COLUMNS;
   const filtered = viewAll
-    ? dateFiltered
-    : dateFiltered.filter((b) => COLUMNS.some((c) => c.id === b.PIPELINE_STATUS));
+    ? widgetFiltered
+    : widgetFiltered.filter((b) => COLUMNS.some((c) => c.id === b.PIPELINE_STATUS));
 
   const visibleBrands = columnFilter ? filtered.filter((b) => b.PIPELINE_STATUS === columnFilter) : filtered;
-  const stuck = seFiltered.filter(isBrandStuck).length;
+  const stuck = seFiltered.filter((b) => b.DAYS_IN_STATUS > 7).length;
   const live = seFiltered.filter((b) => b.PIPELINE_STATUS === "live").length;
 
   async function refresh() {
@@ -168,26 +146,8 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
               }}>
               View all
             </button>
-            <div className="flex items-center gap-1.5 rounded-lg px-3 py-2" style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)" }}>
-              <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)" }}>Status entered</span>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="bg-transparent outline-none"
-                style={{ color: dateFrom ? "#fff" : "rgba(255,255,255,0.4)", fontSize: "0.8rem", colorScheme: "dark" }}
-              />
-              <span style={{ color: "rgba(255,255,255,0.3)" }}>–</span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="bg-transparent outline-none"
-                style={{ color: dateTo ? "#fff" : "rgba(255,255,255,0.4)", fontSize: "0.8rem", colorScheme: "dark" }}
-              />
-            </div>
-            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search || dateFrom || dateTo) && (
-              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); setDateFrom(""); setDateTo(""); }}
+            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search) && (
+              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); }}
                 className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
                 ✕ Clear filter
@@ -224,7 +184,7 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
           {([
             { label: "Total brands", key: "all" as const, value: seFiltered.length, color: "#fff" },
             { label: "In progress", key: "in_progress" as const, value: seFiltered.filter(b => !["live","was_live"].includes(b.PIPELINE_STATUS)).length, color: "#72a4bf" },
-            { label: "Stuck >7d", key: "stuck" as const, value: seFiltered.filter(isBrandStuck).length, color: "#e05c5c" },
+            { label: "Stuck >7d", key: "stuck" as const, value: seFiltered.filter(b => b.DAYS_IN_STATUS > 7).length, color: "#e05c5c" },
             { label: "Live", key: "live" as const, value: seFiltered.filter(b => b.PIPELINE_STATUS === "live").length, color: "#4caf82" },
           ]).map((stat) => {
             const isActive = statFilter === stat.key;
@@ -357,12 +317,8 @@ function KanbanView({
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
       {visibleColumns.map((col) => {
-        // Longest-in-status first — surfaces the brands most overdue for
-        // attention (e.g. "was live" the longest) at the top of each column,
-        // instead of whatever order the underlying query happened to return.
-        const colBrands = brands.filter((b) => b.PIPELINE_STATUS === col.id)
-          .sort((a, b) => b.DAYS_IN_STATUS - a.DAYS_IN_STATUS);
-        const totalCount = colBrands.length;
+        const colBrands = brands.filter((b) => b.PIPELINE_STATUS === col.id);
+        const totalCount = brands.filter((b) => b.PIPELINE_STATUS === col.id).length;
         const isOver = dragOver === col.id;
         const isFiltered = columnFilter === col.id;
 
@@ -464,7 +420,7 @@ function TableView({
           {sorted.map((brand) => {
             const hubspotUrl = brand.HUBSPOT_COMPANY_ID ? `https://app.hubspot.com/contacts/21791298/company/${brand.HUBSPOT_COMPANY_ID}` : null;
             const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
-            const isStuck = isBrandStuck(brand);
+            const isStuck = brand.DAYS_IN_STATUS > 7;
             const col = columns.find((c) => c.id === brand.PIPELINE_STATUS);
             return (
               <tr key={brand.BRAND_ID} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer" }}

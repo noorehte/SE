@@ -136,6 +136,15 @@ export interface Brand {
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
 }
 
+// "Stuck" means sitting too long in a status that still needs SE action.
+// "Live" and "Churned" are both terminal/resolved states — a brand that's
+// been live for 90 days isn't stuck, it's succeeding, and a churned brand
+// isn't stuck either, it's done. Only pre-live and "was live" statuses (which
+// genuinely need re-engagement) should ever show as stuck.
+export function isBrandStuck(brand: Pick<Brand, "DAYS_IN_STATUS" | "PIPELINE_STATUS">): boolean {
+  return brand.DAYS_IN_STATUS > 7 && brand.PIPELINE_STATUS !== "live" && brand.PIPELINE_STATUS !== "churned";
+}
+
 export type PipelineStatus =
   | "not_started"
   | "pending_review"

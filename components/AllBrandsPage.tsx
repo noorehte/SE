@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Brand, PipelineStatus, WIDGET_TYPE_LABELS } from "@/lib/metabase";
+import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
 import { ALL_COLUMNS } from "./Dashboard";
 import Sidebar from "./Sidebar";
 import { Search } from "lucide-react";
@@ -96,7 +96,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
               </thead>
               <tbody>
                 {sorted.map((brand) => {
-                  const isStuck = brand.DAYS_IN_STATUS > 7;
+                  const isStuck = isBrandStuck(brand);
                   const col = ALL_COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
                   const hubspotUrl = brand.HUBSPOT_COMPANY_ID ? `https://app.hubspot.com/contacts/21791298/company/${brand.HUBSPOT_COMPANY_ID}` : null;
                   const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;

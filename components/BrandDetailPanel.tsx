@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Brand, WIDGET_TYPE_LABELS, WidgetTypeStatus } from "@/lib/metabase";
+import { Brand, WIDGET_TYPE_LABELS, WidgetTypeStatus, isBrandStuck } from "@/lib/metabase";
 import { ALL_COLUMNS, ScheduledCall } from "./Dashboard";
 import { SE_INFO } from "@/lib/se-info";
 import { X, ExternalLink, CalendarPlus, Copy, Check, Pencil } from "lucide-react";
@@ -333,7 +333,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
     ? `https://app.hubspot.com/contacts/21791298/company/${brand.HUBSPOT_COMPANY_ID}`
     : null;
   const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
-  const isStuck = brand.DAYS_IN_STATUS > 7;
+  const isStuck = isBrandStuck(brand);
 
   return (
     <>

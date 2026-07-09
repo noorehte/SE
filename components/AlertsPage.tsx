@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Brand } from "@/lib/metabase";
+import { Brand, isBrandStuck } from "@/lib/metabase";
 import { ALL_COLUMNS } from "./Dashboard";
 import Sidebar from "./Sidebar";
 import { AlertCircle, UserX, Package } from "lucide-react";
@@ -26,7 +26,9 @@ function buildAlerts(brands: Brand[]): Alert[] {
     // Churned brands are done, not stuck — being 0-SE / 0-products / long
     // "in status" is just what churn looks like, not something to act on.
     if (brand.PIPELINE_STATUS === "churned") continue;
-    if (brand.DAYS_IN_STATUS > 7)      alerts.push({ type: "stuck",       brand, message: `${brand.DAYS_IN_STATUS} days in "${ALL_COLUMNS.find(c => c.id === brand.PIPELINE_STATUS)?.label ?? brand.PIPELINE_STATUS}"` });
+    // isBrandStuck also excludes "live" — a brand that's been live for months
+    // isn't stuck, it's succeeding.
+    if (isBrandStuck(brand))          alerts.push({ type: "stuck",       brand, message: `${brand.DAYS_IN_STATUS} days in "${ALL_COLUMNS.find(c => c.id === brand.PIPELINE_STATUS)?.label ?? brand.PIPELINE_STATUS}"` });
     if (!brand.SE_OWNER)               alerts.push({ type: "no_se",       brand, message: "No SE owner assigned" });
     if (brand.PRODUCTS_COUNT === 0)    alerts.push({ type: "no_products", brand, message: "0 products in portal" });
   }

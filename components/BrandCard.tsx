@@ -1,6 +1,6 @@
 "use client";
 
-import { Brand, PipelineStatus, WIDGET_TYPE_LABELS } from "@/lib/metabase";
+import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
 import { ExternalLink, CalendarCheck } from "lucide-react";
 import { ScheduledCall } from "./Dashboard";
 
@@ -33,7 +33,7 @@ function initials(name: string | null) {
 }
 
 export default function BrandCard({ brand, accent, scheduledCall }: { brand: Brand; accent: string; scheduledCall: ScheduledCall | null }) {
-  const isStuck = brand.DAYS_IN_STATUS > 7;
+  const isStuck = isBrandStuck(brand);
   const blockingItem = BLOCKING_ITEMS[brand.PIPELINE_STATUS];
   const hubspotUrl = brand.HUBSPOT_COMPANY_ID
     ? `https://app.hubspot.com/contacts/21791298/company/${brand.HUBSPOT_COMPANY_ID}`
