@@ -51,6 +51,12 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   const [loading, setLoading] = useState(false);
   const [widgetTypeFilter, setWidgetTypeFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  // Filters brands to ones whose current status was entered within [dateFrom, dateTo]
+  // (inclusive, either end optional) — added because "Live" / "Was Live" got a lot
+  // bigger once widget status started reflecting real per-widget data instead of a
+  // 30-day rolling view-count window, and the raw column got too long to scan.
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   // When on, the Kanban board adds the "Not Started" / "Pending Board Review"
   // columns and the stat cards/table include those brands too — otherwise
   // brands with no actionable status are hidden from the default view.
@@ -71,12 +77,24 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
     ? statFiltered.filter(b => b.WIDGET_TYPES.includes(widgetTypeFilter))
     : statFiltered;
 
+  // Date range is compared against STATUS_ENTERED_AT — i.e. "Live since" /
+  // "Was live since" / whichever date the brand entered its current column —
+  // not brand creation date, so it lines up with what's shown on each card.
+  const dateFiltered = (dateFrom || dateTo)
+    ? widgetFiltered.filter((b) => {
+        const entered = b.STATUS_ENTERED_AT.slice(0, 10); // yyyy-mm-dd
+        if (dateFrom && entered < dateFrom) return false;
+        if (dateTo && entered > dateTo) return false;
+        return true;
+      })
+    : widgetFiltered;
+
   // Outside of "View all", keep the board scoped to the 5 actionable statuses
   // even though getBrands() now returns every partnered brand.
   const activeColumns = viewAll ? ALL_COLUMNS : COLUMNS;
   const filtered = viewAll
-    ? widgetFiltered
-    : widgetFiltered.filter((b) => COLUMNS.some((c) => c.id === b.PIPELINE_STATUS));
+    ? dateFiltered
+    : dateFiltered.filter((b) => COLUMNS.some((c) => c.id === b.PIPELINE_STATUS));
 
   const visibleBrands = columnFilter ? filtered.filter((b) => b.PIPELINE_STATUS === columnFilter) : filtered;
   const stuck = seFiltered.filter((b) => b.DAYS_IN_STATUS > 7).length;
@@ -146,8 +164,26 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
               }}>
               View all
             </button>
-            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search) && (
-              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); }}
+            <div className="flex items-center gap-1.5 rounded-lg px-3 py-2" style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)" }}>
+              <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)" }}>Status entered</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="bg-transparent outline-none"
+                style={{ color: dateFrom ? "#fff" : "rgba(255,255,255,0.4)", fontSize: "0.8rem", colorScheme: "dark" }}
+              />
+              <span style={{ color: "rgba(255,255,255,0.3)" }}>–</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="bg-transparent outline-none"
+                style={{ color: dateTo ? "#fff" : "rgba(255,255,255,0.4)", fontSize: "0.8rem", colorScheme: "dark" }}
+              />
+            </div>
+            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search || dateFrom || dateTo) && (
+              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); setDateFrom(""); setDateTo(""); }}
                 className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
                 ✕ Clear filter
@@ -317,8 +353,12 @@ function KanbanView({
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
       {visibleColumns.map((col) => {
-        const colBrands = brands.filter((b) => b.PIPELINE_STATUS === col.id);
-        const totalCount = brands.filter((b) => b.PIPELINE_STATUS === col.id).length;
+        // Longest-in-status first — surfaces the brands most overdue for
+        // attention (e.g. "was live" the longest) at the top of each column,
+        // instead of whatever order the underlying query happened to return.
+        const colBrands = brands.filter((b) => b.PIPELINE_STATUS === col.id)
+          .sort((a, b) => b.DAYS_IN_STATUS - a.DAYS_IN_STATUS);
+        const totalCount = colBrands.length;
         const isOver = dragOver === col.id;
         const isFiltered = columnFilter === col.id;
 

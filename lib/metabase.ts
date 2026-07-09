@@ -129,6 +129,7 @@ export interface Brand {
   KIND: string | null;
   PIPELINE_STATUS: PipelineStatus;
   DAYS_IN_STATUS: number;
+  STATUS_ENTERED_AT: string; // ISO date the brand entered its current PIPELINE_STATUS
   WIDGET_TYPES: string[];
   WIDGET_STATUSES: Record<string, WidgetTypeStatus>;
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
@@ -144,12 +145,12 @@ export type PipelineStatus =
   | "was_live";
 
 function computePipelineStatus(
-  brand: Omit<Brand, "PIPELINE_STATUS" | "DAYS_IN_STATUS">,
-  hasRecentWidgetViews: boolean,
-  hasAnyWidgetViews: boolean
+  brand: Omit<Brand, "PIPELINE_STATUS" | "DAYS_IN_STATUS" | "STATUS_ENTERED_AT">,
+  hasLiveWidget: boolean,
+  hasWidgetHistory: boolean
 ): PipelineStatus {
-  if (hasRecentWidgetViews) return "live";
-  if (hasAnyWidgetViews) return "was_live";
+  if (hasLiveWidget) return "live";
+  if (hasWidgetHistory) return "was_live";
   // No products yet — nothing to work with. Previously this (and the pending-review
   // case below) returned null and got the brand excluded from the dashboard
   // entirely. Now every partnered brand gets a status so it always shows up
@@ -183,18 +184,14 @@ export async function getBrands(): Promise<Brand[]> {
     3407, // SUBMITTED_TO_MAB
   ];
 
-  const WIDGET_FIELDS = [3552, 3551, 3555];  // BRAND_ID, DAY, VIEWS
   const PRODUCT_FIELDS = [738, 731, 729];    // HEALTH_BRAND_ID, STATUS, DATE_PASSED_PROVIDER_THRESHOLD
-
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   // No explicit field list for table 203 here (unlike the other tables) — we
   // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, widgetRows, productRows, widgetStatusRows] = await Promise.all([
+  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
-    metabaseQuery(464, WIDGET_FIELDS),
     metabaseQuery(202, PRODUCT_FIELDS),
     // Per-brand, per-widget-type live status, straight from Postgres via
     // Grafana — see queryGrafanaPostgres() above for why this replaced
@@ -268,22 +265,6 @@ export async function getBrands(): Promise<Brand[]> {
     });
   }
 
-  // Widget activity — overall brand-level live/was_live detection
-  const recentWidgetBrands = new Set<number>();
-  const anyWidgetBrands = new Set<number>();
-  const firstWidgetViewDate = new Map<number, string>(); // earliest date with views
-  const lastWidgetViewDate = new Map<number, string>();  // most recent date with views
-  for (const r of widgetRows) {
-    if (r.VIEWS > 0) {
-      anyWidgetBrands.add(r.BRAND_ID);
-      if (r.DAY >= thirtyDaysAgo) recentWidgetBrands.add(r.BRAND_ID);
-      const prev = firstWidgetViewDate.get(r.BRAND_ID);
-      if (!prev || r.DAY < prev) firstWidgetViewDate.set(r.BRAND_ID, r.DAY);
-      const prevLast = lastWidgetViewDate.get(r.BRAND_ID);
-      if (!prevLast || r.DAY > prevLast) lastWidgetViewDate.set(r.BRAND_ID, r.DAY);
-    }
-  }
-
   // Per-widget-type "went live" tracking. `widgetStatusRows` is already
   // aggregated per brand+type in SQL (see the queryGrafanaPostgres call
   // above), so this is just a straight mapping — epoch-ms timestamps from
@@ -310,6 +291,35 @@ export async function getBrands(): Promise<Brand[]> {
     brandTypeGroups: widgetStatusRows.length,
     liveCount: widgetStatusLiveCount,
   });
+
+  // Brand-level live/was_live status is derived directly from the per-type
+  // data above — NOT from a separate 30-day-rolling-window view count. That
+  // older approach (previously table 464) could mark a brand "live" just
+  // because it had some page view within the last 30 days even after every
+  // individual widget had already gone inactive, which is exactly the "shows
+  // Live but every widget says (inactive)" bug that was reported. A brand is
+  // only "live" if at least one of its widget types is currently live.
+  const brandHasLiveWidget = new Set<number>();
+  const brandHasWidgetHistory = new Set<number>();
+  const brandFirstLiveDate = new Map<number, string>();   // earliest wentLiveAt among currently-live types
+  const brandLastInactiveDate = new Map<number, string>(); // most recent wentInactiveAt among inactive types
+  for (const [brandId, statuses] of widgetStatusByBrand) {
+    for (const status of Object.values(statuses)) {
+      if (status.wentLiveAt) brandHasWidgetHistory.add(brandId);
+      if (status.isLive) {
+        brandHasLiveWidget.add(brandId);
+        if (status.wentLiveAt) {
+          const prev = brandFirstLiveDate.get(brandId);
+          if (!prev || status.wentLiveAt < prev) brandFirstLiveDate.set(brandId, status.wentLiveAt);
+        }
+      } else if (status.wentInactiveAt) {
+        const prev = brandLastInactiveDate.get(brandId);
+        if (!prev || status.wentInactiveAt > prev) {
+          brandLastInactiveDate.set(brandId, status.wentInactiveAt);
+        }
+      }
+    }
+  }
 
   // Product status + count per brand — PRODUCTS_COUNT is computed directly from
   // table 202 (rather than trusted from table 447) so it works the same way for
@@ -386,8 +396,8 @@ export async function getBrands(): Promise<Brand[]> {
     };
     const computedStatus = computePipelineStatus(
       brandWithExtra,
-      recentWidgetBrands.has(brandId),
-      anyWidgetBrands.has(brandId)
+      brandHasLiveWidget.has(brandId),
+      brandHasWidgetHistory.has(brandId)
     );
     const pipelineStatus = override?.status ?? computedStatus;
     if (!pipelineStatus) return null; // excluded from board
@@ -397,12 +407,12 @@ export async function getBrands(): Promise<Brand[]> {
     if (override?.changedAt) {
       statusEnteredAt = new Date(override.changedAt).getTime();
     } else if (pipelineStatus === "live") {
-      // "Live" since first widget views appeared
-      const d = firstWidgetViewDate.get(brandId);
+      // "Live" since the earliest of its currently-live widget types went live
+      const d = brandFirstLiveDate.get(brandId);
       statusEnteredAt = d ? new Date(d).getTime() : now;
     } else if (pipelineStatus === "was_live") {
-      // "Was live" since last widget views (roughly when activity stopped)
-      const d = lastWidgetViewDate.get(brandId);
+      // "Was live" since the most recent time any widget went inactive
+      const d = brandLastInactiveDate.get(brandId);
       statusEnteredAt = d ? new Date(d).getTime() : now;
     } else if (pipelineStatus === "code_snippets_available") {
       // "Code snippets" since share threshold was first met
@@ -414,7 +424,12 @@ export async function getBrands(): Promise<Brand[]> {
       statusEnteredAt = now;
     }
     const daysInStatus = Math.floor((now - statusEnteredAt) / (1000 * 60 * 60 * 24));
-    return { ...brandWithExtra, PIPELINE_STATUS: pipelineStatus, DAYS_IN_STATUS: daysInStatus };
+    return {
+      ...brandWithExtra,
+      PIPELINE_STATUS: pipelineStatus,
+      DAYS_IN_STATUS: daysInStatus,
+      STATUS_ENTERED_AT: new Date(statusEnteredAt).toISOString(),
+    };
   }
 
   // Brands from table 203 (stg-brands) — the comprehensive list, including
