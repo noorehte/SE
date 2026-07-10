@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
-import BrandCard from "./BrandCard";
+import BrandCard, { SEGMENT_STYLES } from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
 import { LayoutGrid, List, RefreshCw, Search } from "lucide-react";
 import Sidebar from "./Sidebar";
@@ -44,13 +44,26 @@ export const ALL_COLUMNS: { id: PipelineStatus; label: string; accent: string }[
 
 const SE_OWNERS = ["maha", "noor", "naumaan"];
 
+// Segment options for the filter dropdown — same keys BrandCard uses to badge
+// each card, so "Strategic" here means exactly what the colored chip means.
+const SEGMENTS = Object.keys(SEGMENT_STYLES);
+
+// A brand "needs outreach" if it's sitting in a status where the next step is
+// literally an SE call (a fresh onboarding call, or a re-engagement call for
+// a brand that went inactive) and nothing's on the books for them yet.
+const OUTREACH_STATUSES: PipelineStatus[] = ["products_approved_needs_call", "was_live"];
+function needsOutreach(brand: Brand, scheduledCalls: Record<string, ScheduledCall>): boolean {
+  return OUTREACH_STATUSES.includes(brand.PIPELINE_STATUS) && !scheduledCalls[String(brand.BRAND_ID)];
+}
+
 export default function Dashboard({ initialBrands, initialScheduledCalls }: { initialBrands: Brand[]; initialScheduledCalls: Record<string, ScheduledCall> }) {
   const [brands, setBrands] = useState(initialBrands);
   const [scheduledCalls] = useState(initialScheduledCalls);
   const [view, setView] = useState<"kanban" | "table">("kanban");
   const [seFilter, setSeFilter] = useState<string>("all");
+  const [segmentFilter, setSegmentFilter] = useState<string>("all");
   const [columnFilter, setColumnFilter] = useState<PipelineStatus | null>(null);
-  const [statFilter, setStatFilter] = useState<"all" | "in_progress" | "stuck" | "live">("all");
+  const [statFilter, setStatFilter] = useState<"all" | "in_progress" | "stuck" | "live" | "needs_outreach">("all");
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const [loading, setLoading] = useState(false);
   const [widgetTypeFilter, setWidgetTypeFilter] = useState<string | null>(null);
@@ -72,10 +85,15 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
 
   const seFiltered = seFilter === "all" ? searched : searched.filter((b) => b.SE_OWNER === seFilter);
 
-  const statFiltered = statFilter === "all" ? seFiltered
-    : statFilter === "in_progress" ? seFiltered.filter(b => !["live", "was_live"].includes(b.PIPELINE_STATUS))
-    : statFilter === "stuck" ? seFiltered.filter(isBrandStuck)
-    : seFiltered.filter(b => b.PIPELINE_STATUS === "live");
+  const segmentFiltered = segmentFilter === "all"
+    ? seFiltered
+    : seFiltered.filter((b) => b.KIND?.toLowerCase() === segmentFilter);
+
+  const statFiltered = statFilter === "all" ? segmentFiltered
+    : statFilter === "in_progress" ? segmentFiltered.filter(b => !["live", "was_live"].includes(b.PIPELINE_STATUS))
+    : statFilter === "stuck" ? segmentFiltered.filter(isBrandStuck)
+    : statFilter === "needs_outreach" ? segmentFiltered.filter(b => needsOutreach(b, scheduledCalls))
+    : segmentFiltered.filter(b => b.PIPELINE_STATUS === "live");
 
   const widgetFiltered = widgetTypeFilter
     ? statFiltered.filter(b => b.WIDGET_TYPES.includes(widgetTypeFilter))
@@ -101,8 +119,8 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
     : dateFiltered.filter((b) => COLUMNS.some((c) => c.id === b.PIPELINE_STATUS));
 
   const visibleBrands = columnFilter ? filtered.filter((b) => b.PIPELINE_STATUS === columnFilter) : filtered;
-  const stuck = seFiltered.filter(isBrandStuck).length;
-  const live = seFiltered.filter((b) => b.PIPELINE_STATUS === "live").length;
+  const stuck = segmentFiltered.filter(isBrandStuck).length;
+  const live = segmentFiltered.filter((b) => b.PIPELINE_STATUS === "live").length;
 
   async function refresh() {
     setLoading(true);
@@ -186,13 +204,22 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
                 style={{ color: dateTo ? "#fff" : "rgba(255,255,255,0.4)", fontSize: "0.8rem", colorScheme: "dark" }}
               />
             </div>
-            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search || dateFrom || dateTo) && (
-              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); setDateFrom(""); setDateTo(""); }}
+            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search || dateFrom || dateTo || segmentFilter !== "all") && (
+              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); setDateFrom(""); setDateTo(""); setSegmentFilter("all"); }}
                 className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
                 ✕ Clear filter
               </button>
             )}
+            <select
+              value={segmentFilter}
+              onChange={(e) => setSegmentFilter(e.target.value)}
+              className="text-sm rounded-lg px-3 py-2"
+              style={{ background: "rgba(255,255,255,0.07)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)", fontSize: "0.875rem" }}
+            >
+              <option value="all">All Segments</option>
+              {SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_STYLES[s].label}</option>)}
+            </select>
             <select
               value={seFilter}
               onChange={(e) => setSeFilter(e.target.value)}
@@ -220,12 +247,13 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
         </div>
 
         {/* Stat cards */}
-        <div className="grid grid-cols-4 gap-4 px-8 py-5 flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+        <div className="grid grid-cols-5 gap-4 px-8 py-5 flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
           {([
-            { label: "Total brands", key: "all" as const, value: seFiltered.length, color: "#fff" },
-            { label: "In progress", key: "in_progress" as const, value: seFiltered.filter(b => !["live","was_live"].includes(b.PIPELINE_STATUS)).length, color: "#72a4bf" },
-            { label: "Stuck >7d", key: "stuck" as const, value: seFiltered.filter(isBrandStuck).length, color: "#e05c5c" },
-            { label: "Live", key: "live" as const, value: seFiltered.filter(b => b.PIPELINE_STATUS === "live").length, color: "#4caf82" },
+            { label: "Total brands", key: "all" as const, value: segmentFiltered.length, color: "#fff" },
+            { label: "In progress", key: "in_progress" as const, value: segmentFiltered.filter(b => !["live","was_live"].includes(b.PIPELINE_STATUS)).length, color: "#72a4bf" },
+            { label: "Needs outreach", key: "needs_outreach" as const, value: segmentFiltered.filter(b => needsOutreach(b, scheduledCalls)).length, color: "#e9a84c" },
+            { label: "Stuck >7d", key: "stuck" as const, value: segmentFiltered.filter(isBrandStuck).length, color: "#e05c5c" },
+            { label: "Live", key: "live" as const, value: segmentFiltered.filter(b => b.PIPELINE_STATUS === "live").length, color: "#4caf82" },
           ]).map((stat) => {
             const isActive = statFilter === stat.key;
             return (
@@ -245,7 +273,7 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
 
         {/* Widget type filter chips */}
         {Object.entries(WIDGET_TYPE_LABELS).some(([key]) =>
-          seFiltered.some(b => b.WIDGET_TYPES.includes(key))
+          segmentFiltered.some(b => b.WIDGET_TYPES.includes(key))
         ) && (
           <div className="px-8 py-3 flex items-center gap-2 flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
             <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.3)", marginRight: "4px" }}>Widget</span>
@@ -258,10 +286,10 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
                 border: `1px solid ${widgetTypeFilter === null ? "rgba(114,164,191,0.5)" : "rgba(255,255,255,0.1)"}`,
               }}
             >
-              All <span style={{ opacity: 0.6 }}>{seFiltered.length}</span>
+              All <span style={{ opacity: 0.6 }}>{segmentFiltered.length}</span>
             </button>
             {Object.entries(WIDGET_TYPE_LABELS).map(([key, label]) => {
-              const count = seFiltered.filter(b => b.WIDGET_TYPES.includes(key)).length;
+              const count = segmentFiltered.filter(b => b.WIDGET_TYPES.includes(key)).length;
               if (count === 0) return null;
               const isActive = widgetTypeFilter === key;
               return (

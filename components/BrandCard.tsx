@@ -15,7 +15,7 @@ const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
   churned: null,
 };
 
-const SEGMENT_STYLES: Record<string, { label: string; color: string }> = {
+export const SEGMENT_STYLES: Record<string, { label: string; color: string }> = {
   vip:         { label: "VIP",         color: "#a78bfa" },
   strategic:   { label: "Strategic",   color: "#34d399" },
   enterprise:  { label: "Enterprise",  color: "#60a5fa" },
