@@ -70,6 +70,29 @@ export async function getAllOverrides(): Promise<Record<string, OverrideEntry>> 
   return result;
 }
 
+// setOverride/setFieldOverride/clearOverride all do a read-then-merge-then-write
+// against Notion properties on a single per-brand page (and getOrCreatePage itself
+// does a query-then-create for brands with no page yet). The 6 editable fields on
+// a brand's detail panel each fire an independent request, so editing more than one
+// field for the same brand in quick succession produces overlapping requests. Without
+// serialization, two concurrent setFieldOverride calls can each read the page's
+// "Field Overrides" JSON blob before either writes back, so the second write clobbers
+// the first field's change entirely — or, for a brand with no override page yet, both
+// calls can see "not found" and create two duplicate pages, after which reads
+// nondeterministically pick one and silently drop whatever was written to the other.
+// This is exactly the "unable to save all of the editable fields" symptom. Serializing
+// all writes for a given brandId through a promise chain closes the race.
+const pendingByBrand = new Map<number, Promise<unknown>>();
+
+function withBrandLock<T>(brandId: number, fn: () => Promise<T>): Promise<T> {
+  const prev = pendingByBrand.get(brandId) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  // Swallow errors here so a failed save doesn't permanently jam the queue for
+  // this brand; the actual error still propagates to the caller via `run`.
+  pendingByBrand.set(brandId, run.catch(() => undefined));
+  return run;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getOrCreatePage(brandId: number): Promise<{ id: string; properties: any } | null> {
   const data = await notionRequest(`/databases/${DB_ID}/query`, "POST", {
@@ -88,65 +111,71 @@ async function getOrCreatePage(brandId: number): Promise<{ id: string; propertie
 }
 
 export async function setOverride(brandId: number, status: PipelineStatus): Promise<void> {
-  const now = new Date().toISOString();
-  const data = await notionRequest(`/databases/${DB_ID}/query`, "POST", {
-    filter: { property: "Brand ID", title: { equals: String(brandId) } },
-    page_size: 1,
+  return withBrandLock(brandId, async () => {
+    const now = new Date().toISOString();
+    const data = await notionRequest(`/databases/${DB_ID}/query`, "POST", {
+      filter: { property: "Brand ID", title: { equals: String(brandId) } },
+      page_size: 1,
+    });
+    const existing = data.results?.[0];
+    if (existing) {
+      const currentStatus = existing.properties["Status"]?.rich_text?.[0]?.plain_text?.trim();
+      const changedAt = currentStatus !== status ? now
+        : (existing.properties["Status Changed At"]?.rich_text?.[0]?.plain_text?.trim() ?? now);
+      await notionRequest(`/pages/${existing.id}`, "PATCH", {
+        properties: {
+          "Status": { rich_text: [{ text: { content: status } }] },
+          "Status Changed At": { rich_text: [{ text: { content: changedAt } }] },
+        },
+      });
+    } else {
+      await notionRequest("/pages", "POST", {
+        parent: { database_id: DB_ID },
+        properties: {
+          "Brand ID": { title: [{ text: { content: String(brandId) } }] },
+          "Status": { rich_text: [{ text: { content: status } }] },
+          "Status Changed At": { rich_text: [{ text: { content: now } }] },
+        },
+      });
+    }
   });
-  const existing = data.results?.[0];
-  if (existing) {
-    const currentStatus = existing.properties["Status"]?.rich_text?.[0]?.plain_text?.trim();
-    const changedAt = currentStatus !== status ? now
-      : (existing.properties["Status Changed At"]?.rich_text?.[0]?.plain_text?.trim() ?? now);
-    await notionRequest(`/pages/${existing.id}`, "PATCH", {
-      properties: {
-        "Status": { rich_text: [{ text: { content: status } }] },
-        "Status Changed At": { rich_text: [{ text: { content: changedAt } }] },
-      },
-    });
-  } else {
-    await notionRequest("/pages", "POST", {
-      parent: { database_id: DB_ID },
-      properties: {
-        "Brand ID": { title: [{ text: { content: String(brandId) } }] },
-        "Status": { rich_text: [{ text: { content: status } }] },
-        "Status Changed At": { rich_text: [{ text: { content: now } }] },
-      },
-    });
-  }
 }
 
 export async function setFieldOverride(brandId: number, field: string, value: string): Promise<void> {
-  const page = await getOrCreatePage(brandId);
-  if (!page) return;
+  return withBrandLock(brandId, async () => {
+    const page = await getOrCreatePage(brandId);
+    if (!page) return;
 
-  // Read existing field overrides and merge
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const existing = (page.properties as any)["Field Overrides"]?.rich_text?.[0]?.plain_text?.trim();
-  let fields: Record<string, string> = {};
-  if (existing) {
-    try { fields = JSON.parse(existing); } catch { /* ignore */ }
-  }
-  if (value) {
-    fields[field] = value;
-  } else {
-    delete fields[field];
-  }
+    // Read existing field overrides and merge
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existing = (page.properties as any)["Field Overrides"]?.rich_text?.[0]?.plain_text?.trim();
+    let fields: Record<string, string> = {};
+    if (existing) {
+      try { fields = JSON.parse(existing); } catch { /* ignore */ }
+    }
+    if (value) {
+      fields[field] = value;
+    } else {
+      delete fields[field];
+    }
 
-  await notionRequest(`/pages/${page.id}`, "PATCH", {
-    properties: {
-      "Field Overrides": { rich_text: [{ text: { content: JSON.stringify(fields) } }] },
-    },
+    await notionRequest(`/pages/${page.id}`, "PATCH", {
+      properties: {
+        "Field Overrides": { rich_text: [{ text: { content: JSON.stringify(fields) } }] },
+      },
+    });
   });
 }
 
 export async function clearOverride(brandId: number): Promise<void> {
-  const data = await notionRequest(`/databases/${DB_ID}/query`, "POST", {
-    filter: { property: "Brand ID", title: { equals: String(brandId) } },
-    page_size: 1,
+  return withBrandLock(brandId, async () => {
+    const data = await notionRequest(`/databases/${DB_ID}/query`, "POST", {
+      filter: { property: "Brand ID", title: { equals: String(brandId) } },
+      page_size: 1,
+    });
+    const existing = data.results?.[0];
+    if (existing) {
+      await notionRequest(`/pages/${existing.id}`, "PATCH", { archived: true });
+    }
   });
-  const existing = data.results?.[0];
-  if (existing) {
-    await notionRequest(`/pages/${existing.id}`, "PATCH", { archived: true });
-  }
 }
