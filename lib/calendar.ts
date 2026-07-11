@@ -201,25 +201,36 @@ export async function scheduleCall(
     // scheduled) — but it needs to surface as a `draftWarning` rather than
     // disappearing into a console.error the SE never sees, which previously
     // made "no draft, but no error either" indistinguishable from a real bug.
-    const draftTo = uniqueEmails[0];
+    //
+    // If HubSpot didn't surface a contact email, don't skip the draft entirely
+    // — the SE still needs something to fill in and send. Fall back to a
+    // placeholder contact@[brandname].com (same convention used by the
+    // Pigeon Mail onboarding automation) so the draft is always created, and
+    // just flag in draftWarning that the "To" needs to be filled in by hand.
+    let draftTo = uniqueEmails[0];
     let draftWarning: string | undefined;
-    if (draftTo) {
-      const seInfo = getSEInfo(seOwner);
-      const { subject, html } = buildOnboardingCallEmail({
-        brandName,
-        seName: seInfo.displayName,
-        formattedStart,
-        meetingLink: seInfo.meetingLink,
-        leadTimeWeeks: weeksOut,
-      });
-
-      await createGmailDraft(auth, draftTo, subject, html).catch((err) => {
-        console.error(`Failed to create Gmail draft for ${brandName}:`, err);
-        draftWarning = `Call was scheduled, but the email draft failed: ${err instanceof Error ? err.message : String(err)}`;
-      });
-    } else {
-      draftWarning = "Call was scheduled, but no email draft was created — no contact email found for this brand in HubSpot.";
+    if (!draftTo) {
+      const slug = brandName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "")
+        .replace(/^-+|-+$/g, "") || "brand";
+      draftTo = `contact@${slug}.com`;
+      draftWarning = `Draft created with a placeholder "To" (${draftTo}) — no contact email was found for this brand in HubSpot, so update the recipient before sending.`;
     }
+
+    const seInfo = getSEInfo(seOwner);
+    const { subject, html } = buildOnboardingCallEmail({
+      brandName,
+      seName: seInfo.displayName,
+      formattedStart,
+      meetingLink: seInfo.meetingLink,
+      leadTimeWeeks: weeksOut,
+    });
+
+    await createGmailDraft(auth, draftTo, subject, html).catch((err) => {
+      console.error(`Failed to create Gmail draft for ${brandName}:`, err);
+      draftWarning = `Call was scheduled, but the email draft failed: ${err instanceof Error ? err.message : String(err)}`;
+    });
 
     return { success: true, scheduledDate: formattedStart, draftWarning };
   } catch (err) {
