@@ -134,14 +134,31 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   }
 
   async function moveBrand(brandId: number, newStatus: PipelineStatus) {
+    const prevStatus = brands.find((b) => b.BRAND_ID === brandId)?.PIPELINE_STATUS;
     setBrands((prev) =>
       prev.map((b) => (b.BRAND_ID === brandId ? { ...b, PIPELINE_STATUS: newStatus } : b))
     );
-    await fetch("/api/overrides", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brandId, status: newStatus }),
-    });
+    try {
+      const res = await fetch("/api/overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, status: newStatus }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Save failed (${res.status})`);
+      }
+    } catch (e) {
+      // The optimistic move above was never persisted — roll it back so the
+      // board reflects reality instead of quietly reverting on next refresh
+      // with no explanation.
+      if (prevStatus) {
+        setBrands((prev) =>
+          prev.map((b) => (b.BRAND_ID === brandId ? { ...b, PIPELINE_STATUS: prevStatus } : b))
+        );
+      }
+      alert(`Couldn't save status change: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   function toggleColumnFilter(id: PipelineStatus) {

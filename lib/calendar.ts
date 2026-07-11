@@ -152,7 +152,7 @@ export async function scheduleCall(
   brandName: string,
   contactEmails: string[] = [],
   tier: string | null = null
-): Promise<{ success: boolean; scheduledDate?: string; error?: string; authUrl?: string }> {
+): Promise<{ success: boolean; scheduledDate?: string; error?: string; authUrl?: string; draftWarning?: string }> {
   const auth = await getAuthorizedClient(seOwner);
 
   if (!auth) {
@@ -196,7 +196,13 @@ export async function scheduleCall(
     // Create a Gmail draft for the SE to review and send. Every SE gets the same
     // "Welcome to FrontrowMD" template — brand name, SE name/title, scheduled
     // time, and the SE's own booking link are filled in automatically.
+    // The calendar event above has already been created at this point, so a
+    // problem here shouldn't flip `success` to false (the call really is
+    // scheduled) — but it needs to surface as a `draftWarning` rather than
+    // disappearing into a console.error the SE never sees, which previously
+    // made "no draft, but no error either" indistinguishable from a real bug.
     const draftTo = uniqueEmails[0];
+    let draftWarning: string | undefined;
     if (draftTo) {
       const seInfo = getSEInfo(seOwner);
       const { subject, html } = buildOnboardingCallEmail({
@@ -209,10 +215,13 @@ export async function scheduleCall(
 
       await createGmailDraft(auth, draftTo, subject, html).catch((err) => {
         console.error(`Failed to create Gmail draft for ${brandName}:`, err);
+        draftWarning = `Call was scheduled, but the email draft failed: ${err instanceof Error ? err.message : String(err)}`;
       });
+    } else {
+      draftWarning = "Call was scheduled, but no email draft was created — no contact email found for this brand in HubSpot.";
     }
 
-    return { success: true, scheduledDate: formattedStart };
+    return { success: true, scheduledDate: formattedStart, draftWarning };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }

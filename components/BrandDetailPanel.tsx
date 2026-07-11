@@ -274,6 +274,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
   const [scheduleAction, setScheduleAction] = useState<ScheduleAction | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleAuthUrl, setScheduleAuthUrl] = useState<string | null>(null);
+  const [scheduleWarning, setScheduleWarning] = useState<string | null>(null);
   const [contacts, setContacts] = useState<string[]>([]);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
   // Whoever clicks "Schedule 1:1 Call" can put it on their own calendar instead
@@ -303,6 +304,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
     setScheduleAction(action);
     setScheduleError(null);
     setScheduleAuthUrl(null);
+    setScheduleWarning(null);
     try {
       const res = await fetch("/api/schedule-calls", {
         method: "POST",
@@ -317,6 +319,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
       const result = data.results?.[0];
       if (result?.success) {
         setScheduleState("success");
+        setScheduleWarning(result?.draftWarning ?? null);
       } else {
         setScheduleState("error");
         setScheduleError(result?.error ?? "Unknown error");
@@ -507,9 +510,16 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
               )}
               {brand.PIPELINE_STATUS === "products_approved_needs_call" && (
                 scheduleState === "success" ? (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e", fontSize: "0.875rem" }}>
-                    <CalendarPlus size={14} />
-                    {scheduleAction === "call" ? "Call scheduled ✓" : "Added to webinar list ✓"}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e", fontSize: "0.875rem" }}>
+                      <CalendarPlus size={14} />
+                      {scheduleAction === "call" ? "Call scheduled ✓" : "Added to webinar list ✓"}
+                    </div>
+                    {scheduleWarning && (
+                      <div className="px-3 py-2 rounded-lg" style={{ background: "rgba(233,168,76,0.12)", color: "#e9a84c", fontSize: "0.8rem" }}>
+                        {scheduleWarning}
+                      </div>
+                    )}
                   </div>
                 ) : scheduleState === "error" ? (
                   <div className="flex flex-col gap-2">
@@ -526,7 +536,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
                       </a>
                     )}
                     <button
-                      onClick={() => { setScheduleState("idle"); setScheduleError(null); setScheduleAuthUrl(null); }}
+                      onClick={() => { setScheduleState("idle"); setScheduleError(null); setScheduleAuthUrl(null); setScheduleWarning(null); }}
                       className="text-left"
                       style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: "0.8rem", cursor: "pointer", padding: "2px 0" }}>
                       Try again

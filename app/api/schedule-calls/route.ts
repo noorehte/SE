@@ -89,6 +89,7 @@ async function runScheduling(
     callDate?: string;
     error?: string;
     authUrl?: string;
+    draftWarning?: string;
   }[] = [];
 
   for (const brand of wonCandidates) {
@@ -123,6 +124,7 @@ async function runScheduling(
         callDate: result.scheduledDate,
         error: result.error,
         authUrl: result.authUrl,
+        draftWarning: result.draftWarning,
       });
     } else {
       // ── Add to webinar sheet ─────────────────────────────────────────────
