@@ -30,8 +30,9 @@ export const COLUMNS: { id: PipelineStatus; label: string; accent: string }[] = 
 
 // Every status a brand can have, including the two "not yet actionable"
 // ones that getBrands() used to silently drop from the dashboard entirely.
-// Used for status labels/colors everywhere and for the Kanban board when
-// "View all" is toggled on.
+// Used for status labels/colors everywhere (detail panel, alerts, All Brands
+// page) — kept as the full superset so those pages can still label/color a
+// churned brand correctly.
 export const ALL_COLUMNS: { id: PipelineStatus; label: string; accent: string }[] = [
   { id: "not_started",                  label: "Not Started — No Products Yet",            accent: "#5a6b78" },
   { id: "pending_review",               label: "Pending Board Review",                     accent: "#b08bd6" },
@@ -41,6 +42,13 @@ export const ALL_COLUMNS: { id: PipelineStatus; label: string; accent: string }[
   // "Code Snippets Available" just because other data hasn't caught up.
   { id: "churned",                      label: "Churned",                                  accent: "#7a7a7a" },
 ];
+
+// What "View all" on the Dashboard actually shows: every signed-on brand,
+// including the two pre-approval stages (so you can see how many are coming
+// down the pipe) — but never Churned, which isn't useful in a "what's
+// coming / what's active" board and would otherwise sit alongside Live with
+// no way to filter it back out.
+export const SIGNED_ON_COLUMNS = ALL_COLUMNS.filter((c) => c.id !== "churned");
 
 const SE_OWNERS = ["maha", "noor", "naumaan"];
 
@@ -79,9 +87,16 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   // brands with no actionable status are hidden from the default view.
   const [viewAll, setViewAll] = useState(false);
 
+  // Churned is excluded everywhere on this page (board, table, and stat
+  // cards) regardless of the View all toggle — it's not part of "how many
+  // are signed on / coming down the pipe," and mixing it into Total brands
+  // would make that count misleading. Brands page still has its own explicit
+  // Churned filter option for anyone who needs to look one up.
+  const notChurned = brands.filter((b) => b.PIPELINE_STATUS !== "churned");
+
   const searched = search.trim()
-    ? brands.filter((b) => b.BRAND_NAME.toLowerCase().includes(search.trim().toLowerCase()))
-    : brands;
+    ? notChurned.filter((b) => b.BRAND_NAME.toLowerCase().includes(search.trim().toLowerCase()))
+    : notChurned;
 
   const seFiltered = seFilter === "all" ? searched : searched.filter((b) => b.SE_OWNER === seFilter);
 
@@ -112,8 +127,11 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
     : widgetFiltered;
 
   // Outside of "View all", keep the board scoped to the 5 actionable statuses
-  // even though getBrands() now returns every partnered brand.
-  const activeColumns = viewAll ? ALL_COLUMNS : COLUMNS;
+  // even though getBrands() now returns every partnered brand. "View all"
+  // widens that to every signed-on brand (including the two pre-approval
+  // stages, so you can see how many are coming). Churned is already excluded
+  // upstream (notChurned above), for both branches.
+  const activeColumns = viewAll ? SIGNED_ON_COLUMNS : COLUMNS;
   const filtered = viewAll
     ? dateFiltered
     : dateFiltered.filter((b) => COLUMNS.some((c) => c.id === b.PIPELINE_STATUS));
@@ -195,7 +213,7 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
             <button
               onClick={() => setViewAll((v) => !v)}
               className="text-sm px-3 py-2 rounded-lg flex items-center gap-1.5"
-              title={viewAll ? "Showing every brand, any status" : "Only showing the 5 actionable pipeline stages"}
+              title={viewAll ? "Showing every signed-on brand, including pre-approval stages (Churned hidden)" : "Only showing the 5 actionable pipeline stages"}
               style={{
                 background: viewAll ? "rgba(114,164,191,0.2)" : "rgba(255,255,255,0.07)",
                 color: viewAll ? "#72a4bf" : "rgba(255,255,255,0.6)",
