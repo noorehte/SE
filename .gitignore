@@ -36,6 +36,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local dev state stores (KV fallback)
+.dev-tokens.json
+.dev-followups.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

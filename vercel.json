@@ -3,6 +3,10 @@
     {
       "path": "/api/schedule-calls",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/followups",
+      "schedule": "0 13 * * *"
     }
   ]
 }
