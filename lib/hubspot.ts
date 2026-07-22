@@ -156,7 +156,16 @@ export async function getAccountOwnersByCompanyId(companyIds: number[]): Promise
       url.searchParams.set("limit", "200");
       if (ownerAfter) url.searchParams.set("after", ownerAfter);
       const res = await fetch(url, { headers: { Authorization: `Bearer ${getKey()}` } });
-      if (!res.ok) break;
+      if (!res.ok) {
+        // Logged rather than silently swallowed: a 403 here almost always means
+        // the private app's token is missing the `crm.objects.owners.read`
+        // scope, which is separate from the company/contact/deal scopes the
+        // rest of this file relies on — nothing else here calls the Owners
+        // endpoint, so this is the first thing to check if ACCOUNT_OWNER shows
+        // up empty for brands that do have a HubSpot owner assigned.
+        console.error("HubSpot GET /crm/v3/owners failed", res.status, await res.text());
+        break;
+      }
       const data: { results?: { id: string; firstName?: string; lastName?: string; email?: string }[]; paging?: { next?: { after?: string } } } = await res.json();
       for (const o of data.results ?? []) {
         const name = [o.firstName, o.lastName].filter(Boolean).join(" ").trim() || o.email;
@@ -164,6 +173,7 @@ export async function getAccountOwnersByCompanyId(companyIds: number[]): Promise
       }
       ownerAfter = data.paging?.next?.after;
     } while (ownerAfter);
+    console.log(`HubSpot owners resolved: ${ownerNameById.size}`);
 
     // Step 2: batch-read just the companies we actually care about, in
     // chunks of 100 (HubSpot's batch/read limit) — no search cap involved.
@@ -178,17 +188,28 @@ export async function getAccountOwnersByCompanyId(companyIds: number[]): Promise
           inputs: chunk.map((id) => ({ id: String(id) })),
         }),
       });
-      if (!res.ok) continue; // skip this chunk, keep going with the rest
+      if (!res.ok) {
+        console.error("HubSpot POST /crm/v3/objects/companies/batch/read failed", res.status, await res.text());
+        continue; // skip this chunk, keep going with the rest
+      }
       const data: { results?: { id: string; properties: { hubspot_owner_id?: string } }[] } = await res.json();
       for (const r of data.results ?? []) {
         const companyId = Number(r.id);
         const ownerId = r.properties?.hubspot_owner_id ? Number(r.properties.hubspot_owner_id) : null;
         const ownerName = ownerId != null ? ownerNameById.get(ownerId) : undefined;
         if (companyId && ownerName) result.set(companyId, ownerName);
+        else if (companyId && ownerId != null) {
+          // Company has an owner in HubSpot, but that owner ID wasn't in the
+          // list resolved above — usually means step 1 (the Owners fetch)
+          // failed or came back incomplete for this portal.
+          console.error(`HubSpot company ${companyId} has owner ID ${ownerId} with no matching name from /crm/v3/owners`);
+        }
       }
     }
-  } catch {
+    console.log(`HubSpot account owners matched: ${result.size} of ${uniqueIds.length} companies checked`);
+  } catch (err) {
     // non-fatal — dashboard still gets owners from Metabase alone
+    console.error("getAccountOwnersByCompanyId failed", err);
   }
   return result;
 }
