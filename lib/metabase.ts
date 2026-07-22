@@ -39,7 +39,7 @@ async function metabaseQuery(tableId: number, fields?: number[], filters?: unkno
 // table 201 was silently truncated; (2) querying Postgres directly lets us
 // aggregate per brand+type in SQL instead of hand-rolling dedup logic over a
 // row-per-widget-version dataset.
-async function queryGrafanaPostgres(rawSql: string) {
+export async function queryGrafanaPostgres(rawSql: string) {
   const GRAFANA_URL = process.env.GRAFANA_URL!;
   const GRAFANA_API_KEY = process.env.GRAFANA_API_KEY!;
   const GRAFANA_WIDGETS_DATASOURCE_UID = process.env.GRAFANA_WIDGETS_DATASOURCE_UID!;
@@ -139,6 +139,9 @@ export interface Brand {
   WIDGET_TYPES: string[];
   WIDGET_STATUSES: Record<string, WidgetTypeStatus>;
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
+  // Automated snippet follow-ups (SE-tracker controls, stored as field overrides):
+  FOLLOWUP_SNOOZE_UNTIL: string | null; // ISO date — send one agnostic follow-up on this date, then stop
+  FOLLOWUPS_DISABLED: boolean;           // hard-off switch for this brand
 }
 
 // "Stuck" means sitting too long in a status that still needs SE action.
@@ -469,6 +472,8 @@ export async function getBrands(): Promise<Brand[]> {
       WIDGET_TYPES: Object.keys(widgetStatusByBrand.get(brandId) ?? {}),
       WIDGET_STATUSES: widgetStatusByBrand.get(brandId) ?? {},
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
+      FOLLOWUP_SNOOZE_UNTIL: f.FOLLOWUP_SNOOZE_UNTIL || null,
+      FOLLOWUPS_DISABLED: f.FOLLOWUPS_DISABLED === "true",
     };
 
     // Combine both churn signals — app-side discarded_at and HubSpot's

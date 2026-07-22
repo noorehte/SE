@@ -285,6 +285,86 @@ function EditableText({
   );
 }
 
+// Follow-up controls: a scheduled one-off date (brand said "not ready until X")
+// and a hard disable switch. Both persist as field overrides (Notion only — no
+// hubspotCompanyId passed, so nothing is written to HubSpot).
+function FollowupControls({ brand, onBrandUpdate }: {
+  brand: Brand;
+  onBrandUpdate?: (brandId: number, updates: Partial<Brand>) => void;
+}) {
+  const [disabled, setDisabled] = useState(brand.FOLLOWUPS_DISABLED);
+  const [snoozeDate, setSnoozeDate] = useState(brand.FOLLOWUP_SNOOZE_UNTIL ?? "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function toggleDisabled() {
+    const next = !disabled;
+    setDisabled(next); setBusy(true); setErr(null);
+    const e = await saveFieldOverride(brand.BRAND_ID, "FOLLOWUPS_DISABLED", next ? "true" : "");
+    if (e) { setErr(e); setDisabled(!next); } else { onBrandUpdate?.(brand.BRAND_ID, { FOLLOWUPS_DISABLED: next }); }
+    setBusy(false);
+  }
+
+  async function saveDate(v: string) {
+    setSnoozeDate(v); setBusy(true); setErr(null);
+    const e = await saveFieldOverride(brand.BRAND_ID, "FOLLOWUP_SNOOZE_UNTIL", v);
+    if (e) { setErr(e); } else { onBrandUpdate?.(brand.BRAND_ID, { FOLLOWUP_SNOOZE_UNTIL: v || null }); }
+    setBusy(false);
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div style={{ fontSize: "0.8rem", color: "#fff" }}>Follow-ups</div>
+          <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.4)" }}>
+            {disabled ? "Disabled — this brand won't be contacted" : "Automated 10/20/30/40-day cadence active"}
+          </div>
+        </div>
+        <button
+          onClick={toggleDisabled}
+          disabled={busy}
+          className="px-3 py-1.5 rounded-lg hover:opacity-80 transition-opacity"
+          style={{
+            background: disabled ? "rgba(76,175,130,0.12)" : "rgba(224,92,92,0.12)",
+            color: disabled ? "#4caf82" : "#e05c5c",
+            fontSize: "0.8rem", border: "none", cursor: busy ? "default" : "pointer", flexShrink: 0,
+          }}>
+          {disabled ? "Enable follow-ups" : "Disable follow-ups"}
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div style={{ fontSize: "0.8rem", color: "#fff" }}>Scheduled follow-up</div>
+          <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.4)" }}>
+            One agnostic check-in on this date (e.g. brand said &ldquo;not ready yet&rdquo;), then no more.
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <input
+            type="date"
+            value={snoozeDate}
+            disabled={disabled || busy}
+            onChange={(e) => saveDate(e.target.value)}
+            style={{
+              background: "#0d1e2d", color: "#fff", border: "1px solid rgba(114,164,191,0.4)",
+              borderRadius: "6px", padding: "3px 6px", fontSize: "0.8rem", opacity: disabled ? 0.4 : 1,
+              colorScheme: "dark",
+            }} />
+          {snoozeDate && !disabled && (
+            <button onClick={() => saveDate("")} title="Clear" style={{ color: "rgba(255,255,255,0.3)", background: "none", border: "none", cursor: "pointer" }}>
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {err && <div style={{ fontSize: "0.72rem", color: "#e05c5c" }}>Couldn&apos;t save: {err}</div>}
+    </div>
+  );
+}
+
 export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBrandUpdate }: {
   brand: Brand;
   scheduledCall: ScheduledCall | null;
@@ -512,6 +592,12 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
             {TRACKED_WIDGET_TYPES.map((type) => (
               <WidgetStatusRow key={type} type={type} status={brand.WIDGET_STATUSES?.[type]} />
             ))}
+          </div>
+
+          {/* Follow-ups — automated snippet-implementation cadence controls */}
+          <div className="mb-6">
+            <div className="mb-3" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Follow-ups</div>
+            <FollowupControls brand={brand} onBrandUpdate={onBrandUpdate} />
           </div>
 
           {/* Links */}
