@@ -32,6 +32,17 @@ function initials(name: string | null) {
   return OWNER_INITIALS[name.toLowerCase()] ?? name.slice(0, 2).toUpperCase();
 }
 
+// ACCOUNT_OWNER holds a real full name straight from HubSpot (e.g. "Noor
+// Ehtesham"), not one of our internal shortnames — OWNER_INITIALS doesn't
+// apply here, so this takes first-letter-of-first-name + first-letter-of-
+// last-name instead.
+function hubspotInitials(name: string | null) {
+  if (!name) return "—";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export default function BrandCard({ brand, accent, scheduledCall }: { brand: Brand; accent: string; scheduledCall: ScheduledCall | null }) {
   const isStuck = isBrandStuck(brand);
   const blockingItem = BLOCKING_ITEMS[brand.PIPELINE_STATUS];
@@ -84,6 +95,14 @@ export default function BrandCard({ brand, accent, scheduledCall }: { brand: Bra
               {initials(name)}
             </span>
           ))}
+          {/* Account Owner (HubSpot) — second check, pulled straight from HubSpot's
+              native Company owner rather than Metabase, so it's styled in HubSpot's
+              orange to visually distinguish it from the three editable owners above. */}
+          <span title={brand.ACCOUNT_OWNER ? `Account Owner (HubSpot): ${brand.ACCOUNT_OWNER}` : "Account Owner (HubSpot): unassigned"}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+            style={{ background: "#3d2410", color: "#f97316", border: "1px solid rgba(249,115,22,0.35)" }}>
+            {hubspotInitials(brand.ACCOUNT_OWNER)}
+          </span>
         </div>
         <span style={{ fontSize: "0.8rem", fontWeight: 600, color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.35)" }}>
           {brand.DAYS_IN_STATUS}d
