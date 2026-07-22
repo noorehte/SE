@@ -293,6 +293,27 @@ export async function getBrands(): Promise<Brand[]> {
     .filter((id: number | null): id is number => id != null);
   const hubspotAccountOwnerByCompanyId = await getAccountOwnersByCompanyId(pipelineCompanyIds);
 
+  // Temporary diagnostic — pinning down why a handful of brands (HairMax,
+  // Neurable, Optimize Minerals) still show no ACCOUNT_OWNER even though
+  // their HubSpot company owner resolves fine via getAccountOwnersByCompanyId
+  // on its own. Checking whether it's a type mismatch (e.g. Metabase
+  // returning HUBSPOT_COMPANY_ID as a string, which would silently fail a
+  // Map.get() keyed by number) versus something else. Remove once resolved.
+  for (const r of stgBrandRows as Record<string, unknown>[]) {
+    const name = String(r.NAME ?? "").toLowerCase();
+    if (["hairmax", "neurable", "optimize minerals"].includes(name)) {
+      const rawId = r.HUBSPOT_COMPANY_ID;
+      console.log(
+        `DEBUG owner lookup — brand=${r.NAME} HUBSPOT_COMPANY_ID=${rawId} (typeof ${typeof rawId}) ` +
+        `mapHasNumberKey=${hubspotAccountOwnerByCompanyId.has(Number(rawId))} ` +
+        `mapValueDirect=${hubspotAccountOwnerByCompanyId.get(rawId as number)}`
+      );
+    }
+  }
+  console.log(
+    `DEBUG owner map size=${hubspotAccountOwnerByCompanyId.size}, sample keys=${JSON.stringify(Array.from(hubspotAccountOwnerByCompanyId.keys()).slice(0, 5))}`
+  );
+
   // Table 203 (stg-brands) is the comprehensive brand list — every brand flows in
   // here, including ones that never went through the onboarding portal. Table 447
   // (FCT_BRAND_ONBOARDING) only covers portal brands, so from here on it's used

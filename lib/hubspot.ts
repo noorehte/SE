@@ -13,6 +13,18 @@ const OWNER_TO_HUBSPOT_ID: Record<string, string> = {
   zeke:     "2060158945",
 };
 
+// Old/deactivated HubSpot owner IDs -> the current owner ID they were
+// replaced by. HubSpot's Owners endpoint returns no name for a deactivated
+// user (see 32541516 below — Noor's old HubSpot user record from before a
+// re-provision), so without this alias every company still pointing at the
+// stale ID would show up with no assigned owner even though it's really just
+// pointing at a name-less deactivated record for someone who's still active
+// under a different ID. Add an entry here any time an owner's HubSpot user
+// gets recreated rather than updating every company record in HubSpot itself.
+const LEGACY_OWNER_ID_ALIASES: Record<number, number> = {
+  32541516: 93684249, // old Noor -> current Noor
+};
+
 // Maps our internal field names to HubSpot company property names + value transforms
 const FIELD_TO_HUBSPOT: Record<string, { property: string; transform?: (v: string) => string }> = {
   SE_OWNER:        { property: "solutions_engineer" }, // string — just write the name
@@ -207,14 +219,17 @@ export async function getAccountOwnersByCompanyId(companyIds: number[]): Promise
       const data: { results?: { id: string; properties: { hubspot_owner_id?: string } }[] } = await res.json();
       for (const r of data.results ?? []) {
         const companyId = Number(r.id);
-        const ownerId = r.properties?.hubspot_owner_id ? Number(r.properties.hubspot_owner_id) : null;
+        const rawOwnerId = r.properties?.hubspot_owner_id ? Number(r.properties.hubspot_owner_id) : null;
+        const ownerId = rawOwnerId != null ? (LEGACY_OWNER_ID_ALIASES[rawOwnerId] ?? rawOwnerId) : null;
         const ownerName = ownerId != null ? ownerNameById.get(ownerId) : undefined;
         if (companyId && ownerName) result.set(companyId, ownerName);
         else if (companyId && ownerId != null) {
           // Company has an owner in HubSpot, but that owner ID wasn't in the
-          // list resolved above — usually means step 1 (the Owners fetch)
-          // failed or came back incomplete for this portal.
-          console.error(`HubSpot company ${companyId} has owner ID ${ownerId} with no matching name from /crm/v3/owners`);
+          // list resolved above (and isn't a known legacy alias either) —
+          // usually means step 1 (the Owners fetch) failed or came back
+          // incomplete for this portal, or it's a genuinely different
+          // deactivated user with no alias mapped yet.
+          console.error(`HubSpot company ${companyId} has owner ID ${rawOwnerId} with no matching name from /crm/v3/owners`);
         }
       }
     }
