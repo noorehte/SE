@@ -151,9 +151,10 @@ export async function getAccountOwnersByCompanyId(companyIds: number[]): Promise
     // endpoint (paginated — this list is small, well under any cap).
     const ownerNameById = new Map<number, string>();
     let ownerAfter: string | undefined;
+    let ownerPage = 0;
     do {
       const url = new URL(`${BASE}/crm/v3/owners`);
-      url.searchParams.set("limit", "200");
+      url.searchParams.set("limit", "500"); // HubSpot's documented max for this endpoint
       if (ownerAfter) url.searchParams.set("after", ownerAfter);
       const res = await fetch(url, { headers: { Authorization: `Bearer ${getKey()}` } });
       if (!res.ok) {
@@ -166,14 +167,25 @@ export async function getAccountOwnersByCompanyId(companyIds: number[]): Promise
         console.error("HubSpot GET /crm/v3/owners failed", res.status, await res.text());
         break;
       }
-      const data: { results?: { id: string; firstName?: string; lastName?: string; email?: string }[]; paging?: { next?: { after?: string } } } = await res.json();
+      const raw = await res.text();
+      const data: { results?: { id: string; firstName?: string; lastName?: string; email?: string }[]; paging?: { next?: { after?: string } } } = JSON.parse(raw);
+      // Diagnostic: dump the raw shape of the first page only, so we can see
+      // exactly what keys HubSpot returned if pagination/parsing assumptions
+      // above turn out to be wrong (e.g. no "paging" key, or a differently
+      // named results array) — remove once ACCOUNT_OWNER is confirmed working.
+      if (ownerPage === 0) {
+        console.log("HubSpot /crm/v3/owners page 0 raw (first 800 chars):", raw.slice(0, 800));
+        console.log("HubSpot /crm/v3/owners page 0 has paging.next?", !!data.paging?.next);
+      }
       for (const o of data.results ?? []) {
         const name = [o.firstName, o.lastName].filter(Boolean).join(" ").trim() || o.email;
         if (name) ownerNameById.set(Number(o.id), name);
       }
       ownerAfter = data.paging?.next?.after;
+      ownerPage++;
     } while (ownerAfter);
-    console.log(`HubSpot owners resolved: ${ownerNameById.size}`);
+    console.log(`HubSpot owners resolved: ${ownerNameById.size} across ${ownerPage} page(s)`);
+    console.log("HubSpot owners includes Noor (93684249)?", ownerNameById.has(93684249));
 
     // Step 2: batch-read just the companies we actually care about, in
     // chunks of 100 (HubSpot's batch/read limit) — no search cap involved.
