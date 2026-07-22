@@ -36,7 +36,7 @@ export default function BrandCard({ brand, accent, scheduledCall }: { brand: Bra
   const isStuck = isBrandStuck(brand);
   const blockingItem = BLOCKING_ITEMS[brand.PIPELINE_STATUS];
   const hubspotUrl = brand.HUBSPOT_COMPANY_ID
-    ? `https://app.hubspot.com/contacts/21791298/company/${brand.HUBSPOT_COMPANY_ID}`
+    ? `https://app-na2.hubspot.com/contacts/46815331/record/0-2/${brand.HUBSPOT_COMPANY_ID}`
     : null;
   const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
 

@@ -99,7 +99,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                 {sorted.map((brand) => {
                   const isStuck = isBrandStuck(brand);
                   const col = ALL_COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
-                  const hubspotUrl = brand.HUBSPOT_COMPANY_ID ? `https://app.hubspot.com/contacts/21791298/company/${brand.HUBSPOT_COMPANY_ID}` : null;
+                  const hubspotUrl = brand.HUBSPOT_COMPANY_ID ? `https://app-na2.hubspot.com/contacts/46815331/record/0-2/${brand.HUBSPOT_COMPANY_ID}` : null;
                   const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
                   return (
                     <tr key={brand.BRAND_ID} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
