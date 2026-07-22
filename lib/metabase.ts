@@ -1,5 +1,5 @@
 import { getAllOverrides, OverrideEntry } from "@/lib/overrides";
-import { getChurnDatesByCompanyId } from "@/lib/hubspot";
+import { getChurnDatesByCompanyId, getAccountOwnersByCompanyId } from "@/lib/hubspot";
 
 async function metabaseQuery(tableId: number, fields?: number[], filters?: unknown[], limit?: number) {
   // Read at request time — module-level access gets baked in as undefined for Sensitive vars
@@ -110,6 +110,11 @@ export interface Brand {
   SE_OWNER: string | null;
   OPS_OWNER: string | null;
   ACCOUNT_MANAGER: string | null;
+  // HubSpot's native "Company owner" (hubspot_owner_id) — a second,
+  // independent check pulled straight from HubSpot rather than Metabase.
+  // Distinct from ACCOUNT_MANAGER (our own "technical account manager"
+  // custom property); read-only here, no override/edit path.
+  ACCOUNT_OWNER: string | null;
   BD_REP: string | null;
   HUBSPOT_COMPANY_ID: number | null;
   HAS_PAYMENT_METHOD: boolean;
@@ -205,7 +210,7 @@ export async function getBrands(): Promise<Brand[]> {
   // No explicit field list for table 203 here (unlike the other tables) — we
   // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, hubspotChurnDateByCompanyId] = await Promise.all([
+  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, hubspotChurnDateByCompanyId, hubspotAccountOwnerByCompanyId] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
     // health_brand_products has 5,900+ rows — table 202 (Metabase's mirror)
@@ -255,6 +260,12 @@ export async function getBrands(): Promise<Brand[]> {
     // 202 HubSpot companies have churn_date set vs. 183 discarded_at rows in
     // the app DB, and the two sets don't fully overlap.
     getChurnDatesByCompanyId(),
+    // Second check on account ownership: HubSpot's native Company owner
+    // (hubspot_owner_id), fetched independently of Metabase. Metabase has no
+    // equivalent field to reconcile against — this is purely additive, so
+    // it's attached to the brand straight from HubSpot, keyed by company ID
+    // the same way the churn signal above is.
+    getAccountOwnersByCompanyId(),
   ]);
 
   // Only brands flagged as an actual partner belong on the dashboard — table 203
@@ -434,6 +445,9 @@ export async function getBrands(): Promise<Brand[]> {
       SE_OWNER: f.SE_OWNER ?? onboarding?.SE_OWNER ?? stg.SE_OWNER,
       OPS_OWNER: f.OPS_OWNER ?? onboarding?.OPS_OWNER ?? stg.OPS_OWNER,
       ACCOUNT_MANAGER: f.ACCOUNT_MANAGER ?? onboarding?.ACCOUNT_MANAGER ?? stg.ACCOUNT_MANAGER,
+      ACCOUNT_OWNER: stg.HUBSPOT_COMPANY_ID
+        ? hubspotAccountOwnerByCompanyId.get(stg.HUBSPOT_COMPANY_ID) ?? null
+        : null,
       BD_REP: f.BD_REP ?? onboarding?.BD_REP ?? null,
       BRAND_CREATED_AT: onboarding?.BRAND_CREATED_AT ?? stg.CREATED_AT,
       ANY_ADMIN_LAST_SIGNED_IN_AT: onboarding?.ANY_ADMIN_LAST_SIGNED_IN_AT ?? null,

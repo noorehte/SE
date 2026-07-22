@@ -156,6 +156,27 @@ function EditableOwner({
   );
 }
 
+// Pulled straight from HubSpot's native Company owner (hubspot_owner_id) —
+// a second, independent check on account ownership alongside the
+// Metabase-sourced owners above. No override/edit path: HubSpot is the
+// source of truth for this one, so there's nothing to save back.
+function ReadOnlyOwner({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+        style={{ background: "#1e3a4f", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
+        {initials(value)}
+      </span>
+      <div className="flex-1">
+        <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+        <span style={{ fontSize: "0.875rem", color: value ? "#fff" : "rgba(255,255,255,0.3)" }}>
+          {value ?? "Unassigned"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function EditableSelect({
   brandId, field, label, value, options, optionLabels, hubspotCompanyId, onSaved,
 }: { brandId: number; field: string; label: string; value: string | null; options: string[]; optionLabels: Record<string, string>; hubspotCompanyId?: number | null; onSaved?: (field: string, value: string) => void }) {
@@ -378,6 +399,7 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
               <EditableOwner brandId={brand.BRAND_ID} field="ACCOUNT_MANAGER" label="Account Manager" value={brand.ACCOUNT_MANAGER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { ACCOUNT_MANAGER: v })} />
               <EditableOwner brandId={brand.BRAND_ID} field="OPS_OWNER" label="Ops Owner" value={brand.OPS_OWNER} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { OPS_OWNER: v })} />
               <EditableOwner brandId={brand.BRAND_ID} field="BD_REP" label="BD Rep" value={brand.BD_REP} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { BD_REP: v })} />
+              <ReadOnlyOwner label="Account Owner (HubSpot)" value={brand.ACCOUNT_OWNER} />
             </div>
           </div>
 

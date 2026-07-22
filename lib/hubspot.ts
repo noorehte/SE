@@ -124,6 +124,66 @@ export async function getChurnDatesByCompanyId(): Promise<Map<number, string>> {
   return result;
 }
 
+// HubSpot's native "Company owner" (the `hubspot_owner_id` property, distinct
+// from our custom `account_manager`/`solutions_engineer`/`ops_owner`
+// properties) — this is the actual CRM-assigned owner of the account in
+// HubSpot. Used as a second, independent check alongside Metabase's own
+// owner fields, since Metabase's mirrored values can lag or drift from
+// what's actually assigned in HubSpot. Returns a map of HubSpot company ID
+// -> owner display name.
+export async function getAccountOwnersByCompanyId(): Promise<Map<number, string>> {
+  const result = new Map<number, string>();
+  if (!getKey()) return result;
+
+  try {
+    // Step 1: resolve owner IDs -> display names once, via HubSpot's Owners
+    // endpoint (paginated).
+    const ownerNameById = new Map<number, string>();
+    let ownerAfter: string | undefined;
+    do {
+      const url = new URL(`${BASE}/crm/v3/owners`);
+      url.searchParams.set("limit", "200");
+      if (ownerAfter) url.searchParams.set("after", ownerAfter);
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${getKey()}` } });
+      if (!res.ok) break;
+      const data: { results?: { id: string; firstName?: string; lastName?: string; email?: string }[]; paging?: { next?: { after?: string } } } = await res.json();
+      for (const o of data.results ?? []) {
+        const name = [o.firstName, o.lastName].filter(Boolean).join(" ").trim() || o.email;
+        if (name) ownerNameById.set(Number(o.id), name);
+      }
+      ownerAfter = data.paging?.next?.after;
+    } while (ownerAfter);
+
+    // Step 2: page through companies that have an owner assigned, and map
+    // company ID -> owner name via the lookup above.
+    let companyAfter: string | undefined;
+    do {
+      const res = await fetch(`${BASE}/crm/v3/objects/companies/search`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filterGroups: [{ filters: [{ propertyName: "hubspot_owner_id", operator: "HAS_PROPERTY" }] }],
+          properties: ["hubspot_owner_id"],
+          limit: 200,
+          after: companyAfter,
+        }),
+      });
+      if (!res.ok) break;
+      const data: { results?: { id: string; properties: { hubspot_owner_id?: string } }[]; paging?: { next?: { after?: string } } } = await res.json();
+      for (const r of data.results ?? []) {
+        const companyId = Number(r.id);
+        const ownerId = r.properties?.hubspot_owner_id ? Number(r.properties.hubspot_owner_id) : null;
+        const ownerName = ownerId != null ? ownerNameById.get(ownerId) : undefined;
+        if (companyId && ownerName) result.set(companyId, ownerName);
+      }
+      companyAfter = data.paging?.next?.after;
+    } while (companyAfter);
+  } catch {
+    // non-fatal — dashboard still gets owners from Metabase alone
+  }
+  return result;
+}
+
 // Returns true if the company has at least one "Closed Won" deal in HubSpot.
 // Fails open (returns true) if there's no HubSpot ID or the API call fails.
 export async function isCompanyClosedWon(hubspotCompanyId: number): Promise<boolean> {
