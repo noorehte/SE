@@ -136,68 +136,68 @@ export async function getChurnDatesByCompanyId(): Promise<Map<number, string>> {
   return result;
 }
 
-// HubSpot's native "Company owner" (the `hubspot_owner_id` property, distinct
-// from our custom `account_manager`/`solutions_engineer`/`ops_owner`
-// properties) — this is the actual CRM-assigned owner of the account in
-// HubSpot. Used as a second, independent check alongside Metabase's own
-// owner fields, since Metabase's mirrored values can lag or drift from
-// what's actually assigned in HubSpot.
+export interface HubSpotOwnerCheck {
+  seOwner: string | null;         // from hubspot_owner_id — HubSpot's native Company owner
+  accountManager: string | null;  // from the custom `account_manager` property
+  opsOwner: string | null;        // from the custom `ops_owner` property
+}
+
+// Second, independent check on SE/AM/Ops assignments, read straight from
+// HubSpot rather than Metabase, since Metabase's mirrored values can lag or
+// drift from what's actually set in HubSpot:
+//  - SE_OWNER      <- hubspot_owner_id (HubSpot's native "Company owner" —
+//                     in this team's workflow, whoever owns the company
+//                     record in HubSpot is the SE working the account)
+//  - ACCOUNT_MANAGER <- the custom `account_manager` property (same property
+//                     updateCompanyField() above already writes to)
+//  - OPS_OWNER     <- the custom `ops_owner` property (same idea)
+// All three custom/native properties store a HubSpot owner ID, so all three
+// go through the same Owners-API name resolution below.
 //
 // Deliberately scoped to the company IDs actually on the pipeline (passed
 // in) rather than searching the whole portal: HubSpot's Search API hard-caps
 // total retrievable results at 10,000 regardless of how many rows actually
-// match a filter, and this portal has ~14,800+ companies with an owner set —
-// past that cap. An earlier version used a HAS_PROPERTY search across all
-// companies and silently lost every company beyond the 10k ceiling (in
-// whatever order HubSpot's default sort returned them), which is why brands
-// like Phoilex/Theda Health/Mama Bird — which do have an owner set in
-// HubSpot — were showing up unassigned on the dashboard. Batch/read by ID has
-// no such cap, since it's a direct lookup rather than a filtered search.
-// Returns a map of HubSpot company ID -> owner display name.
-export async function getAccountOwnersByCompanyId(companyIds: number[]): Promise<Map<number, string>> {
-  const result = new Map<number, string>();
+// match a filter, and this portal has more companies with an owner set than
+// that. Batch/read by ID has no such cap, since it's a direct lookup rather
+// than a filtered search. Returns a map of HubSpot company ID -> the three
+// resolved names.
+export async function getHubSpotOwnerChecksByCompanyId(companyIds: number[]): Promise<Map<number, HubSpotOwnerCheck>> {
+  const result = new Map<number, HubSpotOwnerCheck>();
   if (!getKey() || companyIds.length === 0) return result;
 
   try {
     // Step 1: resolve owner IDs -> display names once, via HubSpot's Owners
-    // endpoint (paginated — this list is small, well under any cap).
+    // endpoint (paginated — this list is small, well under any cap). Requires
+    // the `crm.objects.owners.read` scope on the private app token — separate
+    // from the company/contact/deal scopes the rest of this file relies on.
     const ownerNameById = new Map<number, string>();
     let ownerAfter: string | undefined;
-    let ownerPage = 0;
     do {
       const url = new URL(`${BASE}/crm/v3/owners`);
       url.searchParams.set("limit", "500"); // HubSpot's documented max for this endpoint
       if (ownerAfter) url.searchParams.set("after", ownerAfter);
       const res = await fetch(url, { headers: { Authorization: `Bearer ${getKey()}` } });
       if (!res.ok) {
-        // Logged rather than silently swallowed: a 403 here almost always means
-        // the private app's token is missing the `crm.objects.owners.read`
-        // scope, which is separate from the company/contact/deal scopes the
-        // rest of this file relies on — nothing else here calls the Owners
-        // endpoint, so this is the first thing to check if ACCOUNT_OWNER shows
-        // up empty for brands that do have a HubSpot owner assigned.
         console.error("HubSpot GET /crm/v3/owners failed", res.status, await res.text());
         break;
       }
-      const raw = await res.text();
-      const data: { results?: { id: string; firstName?: string; lastName?: string; email?: string }[]; paging?: { next?: { after?: string } } } = JSON.parse(raw);
-      // Diagnostic: dump the raw shape of the first page only, so we can see
-      // exactly what keys HubSpot returned if pagination/parsing assumptions
-      // above turn out to be wrong (e.g. no "paging" key, or a differently
-      // named results array) — remove once ACCOUNT_OWNER is confirmed working.
-      if (ownerPage === 0) {
-        console.log("HubSpot /crm/v3/owners page 0 raw (first 800 chars):", raw.slice(0, 800));
-        console.log("HubSpot /crm/v3/owners page 0 has paging.next?", !!data.paging?.next);
-      }
+      const data: { results?: { id: string; firstName?: string; lastName?: string; email?: string }[]; paging?: { next?: { after?: string } } } = await res.json();
       for (const o of data.results ?? []) {
         const name = [o.firstName, o.lastName].filter(Boolean).join(" ").trim() || o.email;
         if (name) ownerNameById.set(Number(o.id), name);
       }
       ownerAfter = data.paging?.next?.after;
-      ownerPage++;
     } while (ownerAfter);
-    console.log(`HubSpot owners resolved: ${ownerNameById.size} across ${ownerPage} page(s)`);
-    console.log("HubSpot owners includes Noor (93684249)?", ownerNameById.has(93684249));
+
+    // Resolves a raw property value (a HubSpot owner ID, as a string) to a
+    // display name, applying the legacy-alias map for deactivated users.
+    function resolveOwnerName(rawValue: string | undefined): string | null {
+      if (!rawValue) return null;
+      const rawId = Number(rawValue);
+      if (!Number.isFinite(rawId)) return null;
+      const ownerId = LEGACY_OWNER_ID_ALIASES[rawId] ?? rawId;
+      return ownerNameById.get(ownerId) ?? null;
+    }
 
     // Step 2: batch-read just the companies we actually care about, in
     // chunks of 100 (HubSpot's batch/read limit) — no search cap involved.
@@ -208,7 +208,7 @@ export async function getAccountOwnersByCompanyId(companyIds: number[]): Promise
         method: "POST",
         headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          properties: ["hubspot_owner_id"],
+          properties: ["hubspot_owner_id", "account_manager", "ops_owner"],
           inputs: chunk.map((id) => ({ id: String(id) })),
         }),
       });
@@ -216,27 +216,20 @@ export async function getAccountOwnersByCompanyId(companyIds: number[]): Promise
         console.error("HubSpot POST /crm/v3/objects/companies/batch/read failed", res.status, await res.text());
         continue; // skip this chunk, keep going with the rest
       }
-      const data: { results?: { id: string; properties: { hubspot_owner_id?: string } }[] } = await res.json();
+      const data: { results?: { id: string; properties: { hubspot_owner_id?: string; account_manager?: string; ops_owner?: string } }[] } = await res.json();
       for (const r of data.results ?? []) {
         const companyId = Number(r.id);
-        const rawOwnerId = r.properties?.hubspot_owner_id ? Number(r.properties.hubspot_owner_id) : null;
-        const ownerId = rawOwnerId != null ? (LEGACY_OWNER_ID_ALIASES[rawOwnerId] ?? rawOwnerId) : null;
-        const ownerName = ownerId != null ? ownerNameById.get(ownerId) : undefined;
-        if (companyId && ownerName) result.set(companyId, ownerName);
-        else if (companyId && ownerId != null) {
-          // Company has an owner in HubSpot, but that owner ID wasn't in the
-          // list resolved above (and isn't a known legacy alias either) —
-          // usually means step 1 (the Owners fetch) failed or came back
-          // incomplete for this portal, or it's a genuinely different
-          // deactivated user with no alias mapped yet.
-          console.error(`HubSpot company ${companyId} has owner ID ${rawOwnerId} with no matching name from /crm/v3/owners`);
-        }
+        if (!companyId) continue;
+        result.set(companyId, {
+          seOwner: resolveOwnerName(r.properties?.hubspot_owner_id),
+          accountManager: resolveOwnerName(r.properties?.account_manager),
+          opsOwner: resolveOwnerName(r.properties?.ops_owner),
+        });
       }
     }
-    console.log(`HubSpot account owners matched: ${result.size} of ${uniqueIds.length} companies checked`);
   } catch (err) {
-    // non-fatal — dashboard still gets owners from Metabase alone
-    console.error("getAccountOwnersByCompanyId failed", err);
+    // non-fatal — dashboard still gets these fields from Metabase alone
+    console.error("getHubSpotOwnerChecksByCompanyId failed", err);
   }
   return result;
 }

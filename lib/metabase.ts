@@ -1,5 +1,5 @@
 import { getAllOverrides, OverrideEntry } from "@/lib/overrides";
-import { getChurnDatesByCompanyId, getAccountOwnersByCompanyId } from "@/lib/hubspot";
+import { getChurnDatesByCompanyId, getHubSpotOwnerChecksByCompanyId } from "@/lib/hubspot";
 
 async function metabaseQuery(tableId: number, fields?: number[], filters?: unknown[], limit?: number) {
   // Read at request time — module-level access gets baked in as undefined for Sensitive vars
@@ -110,11 +110,6 @@ export interface Brand {
   SE_OWNER: string | null;
   OPS_OWNER: string | null;
   ACCOUNT_MANAGER: string | null;
-  // HubSpot's native "Company owner" (hubspot_owner_id) — a second,
-  // independent check pulled straight from HubSpot rather than Metabase.
-  // Distinct from ACCOUNT_MANAGER (our own "technical account manager"
-  // custom property); read-only here, no override/edit path.
-  ACCOUNT_OWNER: string | null;
   BD_REP: string | null;
   HUBSPOT_COMPANY_ID: number | null;
   HAS_PAYMENT_METHOD: boolean;
@@ -280,39 +275,16 @@ export async function getBrands(): Promise<Brand[]> {
 
   const stgBrandRows = allStgBrandRows.filter((r: Record<string, unknown>) => !!r[partnerKey]);
 
-  // Second check on account ownership: HubSpot's native Company owner
-  // (hubspot_owner_id), fetched independently of Metabase. Metabase has no
-  // equivalent field to reconcile against — this is purely additive, so
-  // it's attached to the brand straight from HubSpot, keyed by company ID
-  // the same way the churn signal above is. Scoped to just this pipeline's
-  // company IDs (not the whole portal) — see getAccountOwnersByCompanyId's
-  // own comment for why: HubSpot's Search API caps out at 10,000 results,
-  // which a portal-wide query blows past, silently dropping brands.
+  // Second check on SE/Account-Manager/Ops assignments, read straight from
+  // HubSpot rather than Metabase (see getHubSpotOwnerChecksByCompanyId's own
+  // comment for the field mapping and why it's scoped to just this
+  // pipeline's company IDs rather than searching the whole portal — HubSpot's
+  // Search API caps out at 10,000 results, which a portal-wide query would
+  // blow past and silently drop brands beyond the cap).
   const pipelineCompanyIds = stgBrandRows
     .map((r: Record<string, unknown>) => r.HUBSPOT_COMPANY_ID as number | null)
     .filter((id: number | null): id is number => id != null);
-  const hubspotAccountOwnerByCompanyId = await getAccountOwnersByCompanyId(pipelineCompanyIds);
-
-  // Temporary diagnostic — pinning down why a handful of brands (HairMax,
-  // Neurable, Optimize Minerals) still show no ACCOUNT_OWNER even though
-  // their HubSpot company owner resolves fine via getAccountOwnersByCompanyId
-  // on its own. Checking whether it's a type mismatch (e.g. Metabase
-  // returning HUBSPOT_COMPANY_ID as a string, which would silently fail a
-  // Map.get() keyed by number) versus something else. Remove once resolved.
-  for (const r of stgBrandRows as Record<string, unknown>[]) {
-    const name = String(r.NAME ?? "").toLowerCase();
-    if (["hairmax", "neurable", "optimize minerals"].includes(name)) {
-      const rawId = r.HUBSPOT_COMPANY_ID;
-      console.log(
-        `DEBUG owner lookup — brand=${r.NAME} HUBSPOT_COMPANY_ID=${rawId} (typeof ${typeof rawId}) ` +
-        `mapHasNumberKey=${hubspotAccountOwnerByCompanyId.has(Number(rawId))} ` +
-        `mapValueDirect=${hubspotAccountOwnerByCompanyId.get(rawId as number)}`
-      );
-    }
-  }
-  console.log(
-    `DEBUG owner map size=${hubspotAccountOwnerByCompanyId.size}, sample keys=${JSON.stringify(Array.from(hubspotAccountOwnerByCompanyId.keys()).slice(0, 5))}`
-  );
+  const hubspotOwnerChecksByCompanyId = await getHubSpotOwnerChecksByCompanyId(pipelineCompanyIds);
 
   // Table 203 (stg-brands) is the comprehensive brand list — every brand flows in
   // here, including ones that never went through the onboarding portal. Table 447
@@ -451,6 +423,10 @@ export async function getBrands(): Promise<Brand[]> {
   const now = Date.now();
   const overrides = await getAllOverrides();
 
+  function hubspotOwnerCheck(hubspotCompanyId: number | null) {
+    return hubspotCompanyId != null ? hubspotOwnerChecksByCompanyId.get(hubspotCompanyId) : undefined;
+  }
+
   function buildBrand(
     brandId: number,
     stg: { // returns null if brand should be excluded from the board
@@ -473,12 +449,12 @@ export async function getBrands(): Promise<Brand[]> {
     const brandWithExtra = {
       BRAND_ID: brandId,
       BRAND_NAME: onboarding?.BRAND_NAME ?? stg.NAME,
-      SE_OWNER: f.SE_OWNER ?? onboarding?.SE_OWNER ?? stg.SE_OWNER,
-      OPS_OWNER: f.OPS_OWNER ?? onboarding?.OPS_OWNER ?? stg.OPS_OWNER,
-      ACCOUNT_MANAGER: f.ACCOUNT_MANAGER ?? onboarding?.ACCOUNT_MANAGER ?? stg.ACCOUNT_MANAGER,
-      ACCOUNT_OWNER: stg.HUBSPOT_COMPANY_ID
-        ? hubspotAccountOwnerByCompanyId.get(stg.HUBSPOT_COMPANY_ID) ?? null
-        : null,
+      // Lowest-priority fallback on all three: HubSpot's own value, read
+      // straight from the CRM, only kicks in when Metabase has nothing —
+      // Notion overrides and the onboarding portal still always win.
+      SE_OWNER: f.SE_OWNER ?? onboarding?.SE_OWNER ?? stg.SE_OWNER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.seOwner ?? null,
+      OPS_OWNER: f.OPS_OWNER ?? onboarding?.OPS_OWNER ?? stg.OPS_OWNER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.opsOwner ?? null,
+      ACCOUNT_MANAGER: f.ACCOUNT_MANAGER ?? onboarding?.ACCOUNT_MANAGER ?? stg.ACCOUNT_MANAGER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.accountManager ?? null,
       BD_REP: f.BD_REP ?? onboarding?.BD_REP ?? null,
       BRAND_CREATED_AT: onboarding?.BRAND_CREATED_AT ?? stg.CREATED_AT,
       ANY_ADMIN_LAST_SIGNED_IN_AT: onboarding?.ANY_ADMIN_LAST_SIGNED_IN_AT ?? null,

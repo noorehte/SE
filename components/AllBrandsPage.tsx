@@ -89,7 +89,6 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                   <Th label="SE" field="SE_OWNER" />
                   <Th label="AM" field="ACCOUNT_MANAGER" />
                   <Th label="Ops" field="OPS_OWNER" />
-                  <Th label="Owner (HS)" field="ACCOUNT_OWNER" />
                   <Th label="Days" field="DAYS_IN_STATUS" />
                   <Th label="Products" field="PRODUCTS_COUNT" />
                   <th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th>
@@ -116,7 +115,6 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.SE_OWNER ?? "—"}</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ACCOUNT_MANAGER ?? "—"}</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.OPS_OWNER ?? "—"}</td>
-                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ACCOUNT_OWNER ?? "—"}</td>
                       <td className="px-4 py-3 font-semibold" style={{ color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.4)", fontSize: "0.875rem" }}>{brand.DAYS_IN_STATUS}d</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{brand.PRODUCTS_COUNT}</td>
                       <td className="px-4 py-3">
