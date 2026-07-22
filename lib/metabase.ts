@@ -213,7 +213,7 @@ export async function getBrands(): Promise<Brand[]> {
   // No explicit field list for table 203 here (unlike the other tables) — we
   // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, hubspotChurnDateByCompanyId, hubspotAccountOwnerByCompanyId] = await Promise.all([
+  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, hubspotChurnDateByCompanyId] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
     // health_brand_products has 5,900+ rows — table 202 (Metabase's mirror)
@@ -263,12 +263,6 @@ export async function getBrands(): Promise<Brand[]> {
     // 202 HubSpot companies have churn_date set vs. 183 discarded_at rows in
     // the app DB, and the two sets don't fully overlap.
     getChurnDatesByCompanyId(),
-    // Second check on account ownership: HubSpot's native Company owner
-    // (hubspot_owner_id), fetched independently of Metabase. Metabase has no
-    // equivalent field to reconcile against — this is purely additive, so
-    // it's attached to the brand straight from HubSpot, keyed by company ID
-    // the same way the churn signal above is.
-    getAccountOwnersByCompanyId(),
   ]);
 
   // Only brands flagged as an actual partner belong on the dashboard — table 203
@@ -285,6 +279,19 @@ export async function getBrands(): Promise<Brand[]> {
   }
 
   const stgBrandRows = allStgBrandRows.filter((r: Record<string, unknown>) => !!r[partnerKey]);
+
+  // Second check on account ownership: HubSpot's native Company owner
+  // (hubspot_owner_id), fetched independently of Metabase. Metabase has no
+  // equivalent field to reconcile against — this is purely additive, so
+  // it's attached to the brand straight from HubSpot, keyed by company ID
+  // the same way the churn signal above is. Scoped to just this pipeline's
+  // company IDs (not the whole portal) — see getAccountOwnersByCompanyId's
+  // own comment for why: HubSpot's Search API caps out at 10,000 results,
+  // which a portal-wide query blows past, silently dropping brands.
+  const pipelineCompanyIds = stgBrandRows
+    .map((r: Record<string, unknown>) => r.HUBSPOT_COMPANY_ID as number | null)
+    .filter((id: number | null): id is number => id != null);
+  const hubspotAccountOwnerByCompanyId = await getAccountOwnersByCompanyId(pipelineCompanyIds);
 
   // Table 203 (stg-brands) is the comprehensive brand list — every brand flows in
   // here, including ones that never went through the onboarding portal. Table 447

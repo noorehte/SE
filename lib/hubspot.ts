@@ -129,15 +129,26 @@ export async function getChurnDatesByCompanyId(): Promise<Map<number, string>> {
 // properties) — this is the actual CRM-assigned owner of the account in
 // HubSpot. Used as a second, independent check alongside Metabase's own
 // owner fields, since Metabase's mirrored values can lag or drift from
-// what's actually assigned in HubSpot. Returns a map of HubSpot company ID
-// -> owner display name.
-export async function getAccountOwnersByCompanyId(): Promise<Map<number, string>> {
+// what's actually assigned in HubSpot.
+//
+// Deliberately scoped to the company IDs actually on the pipeline (passed
+// in) rather than searching the whole portal: HubSpot's Search API hard-caps
+// total retrievable results at 10,000 regardless of how many rows actually
+// match a filter, and this portal has ~14,800+ companies with an owner set —
+// past that cap. An earlier version used a HAS_PROPERTY search across all
+// companies and silently lost every company beyond the 10k ceiling (in
+// whatever order HubSpot's default sort returned them), which is why brands
+// like Phoilex/Theda Health/Mama Bird — which do have an owner set in
+// HubSpot — were showing up unassigned on the dashboard. Batch/read by ID has
+// no such cap, since it's a direct lookup rather than a filtered search.
+// Returns a map of HubSpot company ID -> owner display name.
+export async function getAccountOwnersByCompanyId(companyIds: number[]): Promise<Map<number, string>> {
   const result = new Map<number, string>();
-  if (!getKey()) return result;
+  if (!getKey() || companyIds.length === 0) return result;
 
   try {
     // Step 1: resolve owner IDs -> display names once, via HubSpot's Owners
-    // endpoint (paginated).
+    // endpoint (paginated — this list is small, well under any cap).
     const ownerNameById = new Map<number, string>();
     let ownerAfter: string | undefined;
     do {
@@ -154,30 +165,28 @@ export async function getAccountOwnersByCompanyId(): Promise<Map<number, string>
       ownerAfter = data.paging?.next?.after;
     } while (ownerAfter);
 
-    // Step 2: page through companies that have an owner assigned, and map
-    // company ID -> owner name via the lookup above.
-    let companyAfter: string | undefined;
-    do {
-      const res = await fetch(`${BASE}/crm/v3/objects/companies/search`, {
+    // Step 2: batch-read just the companies we actually care about, in
+    // chunks of 100 (HubSpot's batch/read limit) — no search cap involved.
+    const uniqueIds = Array.from(new Set(companyIds));
+    for (let i = 0; i < uniqueIds.length; i += 100) {
+      const chunk = uniqueIds.slice(i, i + 100);
+      const res = await fetch(`${BASE}/crm/v3/objects/companies/batch/read`, {
         method: "POST",
         headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          filterGroups: [{ filters: [{ propertyName: "hubspot_owner_id", operator: "HAS_PROPERTY" }] }],
           properties: ["hubspot_owner_id"],
-          limit: 200,
-          after: companyAfter,
+          inputs: chunk.map((id) => ({ id: String(id) })),
         }),
       });
-      if (!res.ok) break;
-      const data: { results?: { id: string; properties: { hubspot_owner_id?: string } }[]; paging?: { next?: { after?: string } } } = await res.json();
+      if (!res.ok) continue; // skip this chunk, keep going with the rest
+      const data: { results?: { id: string; properties: { hubspot_owner_id?: string } }[] } = await res.json();
       for (const r of data.results ?? []) {
         const companyId = Number(r.id);
         const ownerId = r.properties?.hubspot_owner_id ? Number(r.properties.hubspot_owner_id) : null;
         const ownerName = ownerId != null ? ownerNameById.get(ownerId) : undefined;
         if (companyId && ownerName) result.set(companyId, ownerName);
       }
-      companyAfter = data.paging?.next?.after;
-    } while (companyAfter);
+    }
   } catch {
     // non-fatal — dashboard still gets owners from Metabase alone
   }
