@@ -87,22 +87,25 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   // brands with no actionable status are hidden from the default view.
   const [viewAll, setViewAll] = useState(false);
 
-  // Churned is excluded everywhere on this page (board, table, and stat
-  // cards) regardless of the View all toggle — it's not part of "how many
-  // are signed on / coming down the pipe," and mixing it into Total brands
-  // would make that count misleading. Brands page still has its own explicit
-  // Churned filter option for anyone who needs to look one up.
-  const notChurned = brands.filter((b) => b.PIPELINE_STATUS !== "churned");
-
+  // The search/SE/segment/stat/widget/date filter chain below runs over
+  // every brand, churned included, so that the Kanban board's Churned column
+  // (see kanbanBrands below) narrows down with the rest of the board instead
+  // of always showing every churned brand regardless of active filters.
+  // Churned is then excluded (see segmentFiltered below) for the stat cards
+  // and table — it's not part of "how many are signed on / coming down the
+  // pipe," and mixing it into Total brands would make that count misleading.
   const searched = search.trim()
-    ? notChurned.filter((b) => b.BRAND_NAME.toLowerCase().includes(search.trim().toLowerCase()))
-    : notChurned;
+    ? brands.filter((b) => b.BRAND_NAME.toLowerCase().includes(search.trim().toLowerCase()))
+    : brands;
 
   const seFiltered = seFilter === "all" ? searched : searched.filter((b) => b.SE_OWNER === seFilter);
 
-  const segmentFiltered = segmentFilter === "all"
+  const segmentMatched = segmentFilter === "all"
     ? seFiltered
     : seFiltered.filter((b) => b.KIND?.toLowerCase() === segmentFilter);
+  // Stat cards/table stay churn-free; the Kanban board's Churned column
+  // (kanbanBrands below) uses segmentMatched directly, before this split.
+  const segmentFiltered = segmentMatched.filter((b) => b.PIPELINE_STATUS !== "churned");
 
   const statFiltered = statFilter === "all" ? segmentFiltered
     : statFilter === "in_progress" ? segmentFiltered.filter(b => !["live", "was_live"].includes(b.PIPELINE_STATUS))
@@ -129,12 +132,23 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   // Outside of "View all", keep the board scoped to the 5 actionable statuses
   // even though getBrands() now returns every partnered brand. "View all"
   // widens that to every signed-on brand (including the two pre-approval
-  // stages, so you can see how many are coming). Churned is already excluded
-  // upstream (notChurned above), for both branches.
+  // stages, so you can see how many are coming). Churned is excluded here too
+  // (dateFiltered is already churn-free, via segmentFiltered above).
   const activeColumns = viewAll ? SIGNED_ON_COLUMNS : COLUMNS;
   const filtered = viewAll
     ? dateFiltered
     : dateFiltered.filter((b) => COLUMNS.some((c) => c.id === b.PIPELINE_STATUS));
+
+  // The Kanban board always shows a Churned column alongside the other
+  // (non-churned) columns, regardless of View all — unlike the stat cards
+  // and table, which stay churn-free so "Total brands" etc. aren't skewed.
+  // Built off segmentMatched (search/SE/segment applied, churned brands
+  // still included) rather than `filtered`, since stat/widget/date filters
+  // don't apply meaningfully to a brand that's no longer active.
+  const churnedColumn = ALL_COLUMNS.find((c) => c.id === "churned")!;
+  const kanbanColumns = [...activeColumns, churnedColumn];
+  const churnedBrands = segmentMatched.filter((b) => b.PIPELINE_STATUS === "churned");
+  const kanbanBrands = [...filtered, ...churnedBrands];
 
   const visibleBrands = columnFilter ? filtered.filter((b) => b.PIPELINE_STATUS === columnFilter) : filtered;
   const stuck = segmentFiltered.filter(isBrandStuck).length;
@@ -349,8 +363,8 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
         <div className="flex-1 overflow-auto p-8">
           {view === "kanban" ? (
             <KanbanView
-              brands={filtered}
-              columns={activeColumns}
+              brands={kanbanBrands}
+              columns={kanbanColumns}
               columnFilter={columnFilter}
               scheduledCalls={scheduledCalls}
               onMove={moveBrand}
