@@ -91,6 +91,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                   <Th label="Ops" field="OPS_OWNER" />
                   <Th label="Days" field="DAYS_IN_STATUS" />
                   <Th label="Products" field="PRODUCTS_COUNT" />
+                  <Th label="Churned" field="PIPELINE_STATUS" />
                   <th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th>
                 </tr>
               </thead>
@@ -117,6 +118,9 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.OPS_OWNER ?? "—"}</td>
                       <td className="px-4 py-3 font-semibold" style={{ color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.4)", fontSize: "0.875rem" }}>{brand.DAYS_IN_STATUS}d</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{brand.PRODUCTS_COUNT}</td>
+                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>
+                        {brand.PIPELINE_STATUS === "churned" ? new Date(brand.STATUS_ENTERED_AT).toLocaleDateString() : "—"}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-3">
                           {hubspotUrl && <a href={hubspotUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#f97316", fontSize: "0.8rem" }} className="hover:opacity-70">HS</a>}

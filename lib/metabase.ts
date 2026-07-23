@@ -115,6 +115,7 @@ export interface Brand {
   HAS_PAYMENT_METHOD: boolean;
   SUBMITTED_TO_MAB: boolean;
   PRODUCTS_COUNT: number;
+  STORE_PRESENCE_COUNT: number; // sum of store_presence_count across the brand's products (table 202)
   REVIEWS_REQUESTED: number;
   HAS_REVIEWS_READY: boolean;
   CA_REQUESTED: number;
@@ -219,7 +220,7 @@ export async function getBrands(): Promise<Brand[]> {
     // "not_started" even though its products are fully approved. Queried
     // directly from Postgres via Grafana instead, same as the widgets fix.
     queryGrafanaPostgres(`
-      select health_brand_id, status, date_passed_provider_threshold
+      select health_brand_id, status, date_passed_provider_threshold, store_presence_count
       from health_brand_products
     `),
     // Per-brand, per-widget-type live status, straight from Postgres via
@@ -400,13 +401,16 @@ export async function getBrands(): Promise<Brand[]> {
   const shareThresholdMet = new Set<number>();
   const firstThresholdDate = new Map<number, string>(); // when share threshold was first met
   const productCountByBrand = new Map<number, number>();
+  const storePresenceCountByBrand = new Map<number, number>();
   for (const r of productRows as Record<string, unknown>[]) {
     const brandId = r.health_brand_id as number | null;
     if (brandId == null) continue;
     const status = r.status as string | null;
     const thresholdMs = r.date_passed_provider_threshold as number | null;
+    const storePresenceCount = r.store_presence_count as number | null;
 
     productCountByBrand.set(brandId, (productCountByBrand.get(brandId) ?? 0) + 1);
+    storePresenceCountByBrand.set(brandId, (storePresenceCountByBrand.get(brandId) ?? 0) + (storePresenceCount ?? 0));
     if (status === "pending_board_review") pendingBoardReview.add(brandId);
     else if (status === "rejected_by_board") rejectedByBoard.add(brandId);
     else approvedProductBrands.add(brandId); // any other status = approved
@@ -459,6 +463,7 @@ export async function getBrands(): Promise<Brand[]> {
       BRAND_CREATED_AT: onboarding?.BRAND_CREATED_AT ?? stg.CREATED_AT,
       ANY_ADMIN_LAST_SIGNED_IN_AT: onboarding?.ANY_ADMIN_LAST_SIGNED_IN_AT ?? null,
       PRODUCTS_COUNT: productCountByBrand.get(brandId) ?? 0,
+      STORE_PRESENCE_COUNT: storePresenceCountByBrand.get(brandId) ?? 0,
       REVIEWS_REQUESTED: onboarding?.REVIEWS_REQUESTED ?? 0,
       HAS_REVIEWS_READY: onboarding?.HAS_REVIEWS_READY ?? false,
       CA_REQUESTED: onboarding?.CA_REQUESTED ?? 0,

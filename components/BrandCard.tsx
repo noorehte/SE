@@ -98,6 +98,12 @@ export default function BrandCard({ brand, accent, scheduledCall }: { brand: Bra
         </span>
       </div>
 
+      {brand.STORE_PRESENCE_COUNT > 0 && (
+        <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)", marginBottom: "4px" }}>
+          {brand.STORE_PRESENCE_COUNT.toLocaleString()} store presence
+        </div>
+      )}
+
       {/* Widget type chips */}
       {brand.WIDGET_TYPES.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">
