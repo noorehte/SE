@@ -12,6 +12,13 @@ export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   const authorized = Boolean(cronSecret) && req.headers.get("authorization") === `Bearer ${cronSecret}`;
   const out = await runFollowups({ dryRun: !authorized });
+  console.log("[followups] cron run", {
+    authorized,
+    hasCronSecret: Boolean(cronSecret),
+    hasAuthHeader: Boolean(req.headers.get("authorization")),
+    fired: out.fired.length,
+    firedBrands: out.fired.map((f) => `${f.brandName}#${f.mark}`),
+  });
   return NextResponse.json(authorized ? out : { note: "unauthorized — dry-run preview only", ...out });
 }
 
