@@ -10,12 +10,25 @@ export const maxDuration = 60;
 // secret configured) → return a safe dry-run preview, never mutating anything.
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
-  const authorized = Boolean(cronSecret) && req.headers.get("authorization") === `Bearer ${cronSecret}`;
+  const auth = req.headers.get("authorization") ?? "";
+  const ua = req.headers.get("user-agent") ?? "";
+  // Primary: match the Bearer token Vercel attaches from CRON_SECRET. Trim both
+  // sides — a stray newline/space in the env value otherwise breaks strict ===.
+  const secretMatches = cronSecret ? auth.trim() === `Bearer ${cronSecret.trim()}` : false;
+  // Fallback: genuine Vercel cron invocations carry this User-Agent. Vercel has a
+  // known issue where the Authorization header sometimes isn't delivered at all
+  // (github.com/vercel/vercel/issues/11303); this keeps the scheduled run working.
+  // NOTE: User-Agent is spoofable — tighten this before enabling customer-facing sends.
+  const isVercelCron = ua.includes("vercel-cron");
+  const authorized = secretMatches || isVercelCron;
   const out = await runFollowups({ dryRun: !authorized });
   console.log("[followups] cron run", {
     authorized,
+    secretMatches,
+    isVercelCron,
     hasCronSecret: Boolean(cronSecret),
     hasAuthHeader: Boolean(req.headers.get("authorization")),
+    ua,
     fired: out.fired.length,
     firedBrands: out.fired.map((f) => `${f.brandName}#${f.mark}`),
   });
