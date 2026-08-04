@@ -60,12 +60,22 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
     .filter((b) => statusFilter === "all" || b.PIPELINE_STATUS === statusFilter)
     .filter((b) => widgetFilter === "all" || b.WIDGET_TYPES.includes(widgetFilter));
 
+  // Distinct owner names actually present in the data — Account Manager and
+  // Ops aren't drawn from a fixed roster the way SE nominally is.
+  function distinctOwnerOptions(field: "ACCOUNT_MANAGER" | "OPS_OWNER") {
+    const names = Array.from(new Set(brands.map((b) => b[field]).filter((n): n is string => !!n))).sort();
+    return names.map((n) => ({ value: n, label: n }));
+  }
+
   const FILTER_CONFIG: Record<string, ColumnFilterConfig> = {
     BRAND_NAME: { kind: "text", field: "BRAND_NAME" },
     PIPELINE_STATUS: { kind: "select", field: "PIPELINE_STATUS", options: ALL_COLUMNS.map((c) => ({ value: c.id, label: c.label })) },
-    SE_OWNER: { kind: "text", field: "SE_OWNER" },
-    ACCOUNT_MANAGER: { kind: "text", field: "ACCOUNT_MANAGER" },
-    OPS_OWNER: { kind: "text", field: "OPS_OWNER" },
+    // Restricted to the 3 real SEs — SE_OWNER can fall back to HubSpot's native
+    // "Company owner" field (see lib/hubspot.ts), which isn't scoped to SEs and
+    // can hold names like account execs. The dropdown shouldn't offer those.
+    SE_OWNER: { kind: "select", field: "SE_OWNER", options: SE_OWNERS.map((se) => ({ value: se, label: se })) },
+    ACCOUNT_MANAGER: { kind: "select", field: "ACCOUNT_MANAGER", options: distinctOwnerOptions("ACCOUNT_MANAGER") },
+    OPS_OWNER: { kind: "select", field: "OPS_OWNER", options: distinctOwnerOptions("OPS_OWNER") },
     DAYS_IN_STATUS: { kind: "min", field: "DAYS_IN_STATUS" },
     PRODUCTS_COUNT: { kind: "min", field: "PRODUCTS_COUNT" },
   };
@@ -80,6 +90,12 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
         return String(raw ?? "").toLowerCase().includes(value.toLowerCase());
       }
       if (config.kind === "select") {
+        // SE_OWNER data mixes shortnames ("maha") and HubSpot full names
+        // ("Maha Awaisi") for the same person — match either form so picking
+        // "maha" from the dropdown catches both.
+        if (key === "SE_OWNER") {
+          return typeof raw === "string" && raw.toLowerCase().startsWith(value.toLowerCase());
+        }
         return raw === value;
       }
       const num = Number(value);
