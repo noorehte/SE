@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
 import { ExternalLink, CalendarCheck } from "lucide-react";
 import { ScheduledCall } from "./Dashboard";
+
+const SHARE_COUNTS_COLLAPSED_LIMIT = 3;
 
 const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
   not_started: "Add products",
@@ -41,8 +44,12 @@ function initials(name: string | null) {
 }
 
 export default function BrandCard({ brand, accent, scheduledCall }: { brand: Brand; accent: string; scheduledCall: ScheduledCall | null }) {
+  const [shareCountsExpanded, setShareCountsExpanded] = useState(false);
   const isStuck = isBrandStuck(brand);
   const blockingItem = BLOCKING_ITEMS[brand.PIPELINE_STATUS];
+  const sortedShareCounts = [...brand.PRODUCT_SHARE_COUNTS].sort((a, b) => b.count - a.count);
+  const hiddenShareCount = sortedShareCounts.length - SHARE_COUNTS_COLLAPSED_LIMIT;
+  const visibleShareCounts = shareCountsExpanded ? sortedShareCounts : sortedShareCounts.slice(0, SHARE_COUNTS_COLLAPSED_LIMIT);
   const hubspotUrl = brand.HUBSPOT_COMPANY_ID
     ? `https://app-na2.hubspot.com/contacts/46815331/record/0-2/${brand.HUBSPOT_COMPANY_ID}`
     : null;
@@ -98,9 +105,22 @@ export default function BrandCard({ brand, accent, scheduledCall }: { brand: Bra
         </span>
       </div>
 
-      {brand.STORE_PRESENCE_COUNT > 0 && (
+      {sortedShareCounts.length > 0 && (
         <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)", marginBottom: "4px" }}>
-          {brand.STORE_PRESENCE_COUNT.toLocaleString()} store presence
+          {visibleShareCounts.map((p, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+              <span style={{ flexShrink: 0 }}>{p.count.toLocaleString()} shares</span>
+            </div>
+          ))}
+          {hiddenShareCount > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShareCountsExpanded((v) => !v); }}
+              style={{ color: "rgba(114,164,191,0.8)", marginTop: "2px", cursor: "pointer" }}
+            >
+              {shareCountsExpanded ? "Show less" : `+${hiddenShareCount} more`}
+            </button>
+          )}
         </div>
       )}
 

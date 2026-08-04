@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
 import BrandCard, { SEGMENT_STYLES } from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
-import { LayoutGrid, List, RefreshCw, Search } from "lucide-react";
+import { Download, LayoutGrid, List, RefreshCw, Search } from "lucide-react";
 import Sidebar from "./Sidebar";
 import GoogleConnectStatus from "./GoogleConnectStatus";
 
@@ -51,6 +51,37 @@ export const ALL_COLUMNS: { id: PipelineStatus; label: string; accent: string }[
 export const SIGNED_ON_COLUMNS = ALL_COLUMNS.filter((c) => c.id !== "churned");
 
 const SE_OWNERS = ["maha", "noor", "naumaan"];
+
+function csvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+// Mirrors the columns shown in TableView, plus the ready dates (not in the
+// table itself, but the most commonly requested export field).
+function exportBrandsCsv(brands: Brand[], columns: { id: PipelineStatus; label: string }[]) {
+  const statusLabel = (status: PipelineStatus) => columns.find((c) => c.id === status)?.label ?? status;
+  const header = ["Brand", "Status", "SE", "AM", "Ops", "Portal", "Reviews Delivered", "Days in Status", "Segment"];
+  const rows = brands.map((b) => [
+    csvCell(b.BRAND_NAME),
+    csvCell(statusLabel(b.PIPELINE_STATUS)),
+    csvCell(b.SE_OWNER ?? ""),
+    csvCell(b.ACCOUNT_MANAGER ?? ""),
+    csvCell(b.OPS_OWNER ?? ""),
+    csvCell(b.ONBOARDING_CHANNEL === "app" ? "Portal" : b.ONBOARDING_CHANNEL === "external" ? "External" : ""),
+    String(b.REVIEWS_DELIVERED),
+    String(b.DAYS_IN_STATUS),
+    csvCell(b.KIND ?? ""),
+  ]);
+  const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `se-pipeline-brands-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // Segment options for the filter dropdown — same keys BrandCard uses to badge
 // each card, so "Strategic" here means exactly what the colored chip means.
@@ -291,6 +322,13 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
             <button onClick={refresh} disabled={loading} className="p-2 rounded-lg disabled:opacity-40"
               style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.12)" }}>
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            </button>
+            <button
+              onClick={() => exportBrandsCsv(visibleBrands, activeColumns)}
+              title="Export the brands currently shown to CSV"
+              className="text-sm px-3 py-2 rounded-lg flex items-center gap-1.5"
+              style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.12)" }}>
+              <Download size={14} /> Export
             </button>
           </div>
         </div>
@@ -535,7 +573,7 @@ function TableView({
     <div className="rounded-xl overflow-hidden" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
       <table className="w-full">
         <thead style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-          <tr><Th label="Brand" field="BRAND_NAME" /><Th label="Status" field="PIPELINE_STATUS" /><Th label="SE" field="SE_OWNER" /><Th label="AM" field="ACCOUNT_MANAGER" /><Th label="Ops" field="OPS_OWNER" /><Th label="Days" field="DAYS_IN_STATUS" /><th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Call</th><th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th></tr>
+          <tr><Th label="Brand" field="BRAND_NAME" /><Th label="Status" field="PIPELINE_STATUS" /><Th label="SE" field="SE_OWNER" /><Th label="AM" field="ACCOUNT_MANAGER" /><Th label="Ops" field="OPS_OWNER" /><Th label="Portal" field="ONBOARDING_CHANNEL" /><Th label="Reviews" field="REVIEWS_DELIVERED" /><Th label="Days" field="DAYS_IN_STATUS" /><th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Call</th><th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th></tr>
         </thead>
         <tbody>
           {sorted.map((brand) => {
@@ -559,6 +597,8 @@ function TableView({
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.SE_OWNER ?? "—"}</td>
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ACCOUNT_MANAGER ?? "—"}</td>
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.OPS_OWNER ?? "—"}</td>
+                <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ONBOARDING_CHANNEL === "app" ? "Portal" : brand.ONBOARDING_CHANNEL === "external" ? "External" : "—"}</td>
+                <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.REVIEWS_DELIVERED}</td>
                 <td className="px-4 py-3 font-semibold" style={{ color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.4)", fontSize: "0.875rem" }}>{brand.DAYS_IN_STATUS}d</td>
                 <td className="px-4 py-3">
                   {scheduledCalls[String(brand.BRAND_ID)] ? (() => {

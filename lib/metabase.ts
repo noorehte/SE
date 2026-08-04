@@ -115,7 +115,7 @@ export interface Brand {
   HAS_PAYMENT_METHOD: boolean;
   SUBMITTED_TO_MAB: boolean;
   PRODUCTS_COUNT: number;
-  STORE_PRESENCE_COUNT: number; // sum of store_presence_count across the brand's products (table 202)
+  PRODUCT_SHARE_COUNTS: { name: string; count: number }[]; // per-product store_presence_count, not summed
   REVIEWS_REQUESTED: number;
   HAS_REVIEWS_READY: boolean;
   CA_REQUESTED: number;
@@ -135,6 +135,8 @@ export interface Brand {
   WIDGET_TYPES: string[];
   WIDGET_STATUSES: Record<string, WidgetTypeStatus>;
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
+  ONBOARDING_CHANNEL: "app" | "external" | null; // "app" = onboarded via Brand Portal (and has portal access)
+  REVIEWS_DELIVERED: number;
   // Automated snippet follow-ups (SE-tracker controls, stored as field overrides):
   FOLLOWUP_SNOOZE_UNTIL: string | null; // ISO date — send one agnostic follow-up on this date, then stop
   FOLLOWUPS_DISABLED: boolean;           // hard-off switch for this brand
@@ -209,7 +211,7 @@ export async function getBrands(): Promise<Brand[]> {
   // No explicit field list for table 203 here (unlike the other tables) — we
   // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows] = await Promise.all([
+  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, onboardingChannelRows, reviewsDeliveredRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
     // health_brand_products has 5,900+ rows — table 202 (Metabase's mirror)
@@ -220,7 +222,7 @@ export async function getBrands(): Promise<Brand[]> {
     // "not_started" even though its products are fully approved. Queried
     // directly from Postgres via Grafana instead, same as the widgets fix.
     queryGrafanaPostgres(`
-      select health_brand_id, status, date_passed_provider_threshold, store_presence_count
+      select health_brand_id, name, status, date_passed_provider_threshold, store_presence_count
       from health_brand_products
     `),
     // Per-brand, per-widget-type live status, straight from Postgres via
@@ -251,6 +253,22 @@ export async function getBrands(): Promise<Brand[]> {
       select id as health_brand_id, discarded_at
       from health_brands
       where discarded_at is not null
+    `),
+    // "app" = onboarded/self-served through the Brand Portal; "external" =
+    // onboarded some other way (e.g. manually by an SE). Also doubles as
+    // brand-portal access, since only "app" brands have portal accounts.
+    queryGrafanaPostgres(`
+      select id as health_brand_id, onboarding_channel
+      from health_brands
+    `),
+    // Reviews "delivered" = notes rows actually shared with the brand,
+    // counted (not just min(created_at) like detectSnippetStatus's ready-date).
+    queryGrafanaPostgres(`
+      select hbp.health_brand_id, count(*) as reviews_delivered
+      from notes n
+      join health_brand_products hbp on hbp.id = n.health_brand_product_id
+      where n.share_with_brands and hbp.discarded_at is null
+      group by 1
     `),
   ]);
 
@@ -385,6 +403,21 @@ export async function getBrands(): Promise<Brand[]> {
     }
   }
 
+  const onboardingChannelByBrand = new Map<number, "app" | "external">();
+  for (const r of onboardingChannelRows as Record<string, unknown>[]) {
+    const brandId = r.health_brand_id as number | null;
+    const channel = r.onboarding_channel as string | null;
+    if (brandId == null || (channel !== "app" && channel !== "external")) continue;
+    onboardingChannelByBrand.set(brandId, channel);
+  }
+
+  const reviewsDeliveredByBrand = new Map<number, number>();
+  for (const r of reviewsDeliveredRows as Record<string, unknown>[]) {
+    const brandId = r.health_brand_id as number | null;
+    if (brandId == null) continue;
+    reviewsDeliveredByBrand.set(brandId, Number(r.reviews_delivered ?? 0));
+  }
+
   // Product status + count per brand — PRODUCTS_COUNT is computed directly from
   // health_brand_products (rather than trusted from table 447) so it works the
   // same way for every brand, whether or not it has an onboarding-portal record.
@@ -394,16 +427,21 @@ export async function getBrands(): Promise<Brand[]> {
   const shareThresholdMet = new Set<number>();
   const firstThresholdDate = new Map<number, string>(); // when share threshold was first met
   const productCountByBrand = new Map<number, number>();
-  const storePresenceCountByBrand = new Map<number, number>();
+  const productShareCountsByBrand = new Map<number, { name: string; count: number }[]>();
   for (const r of productRows as Record<string, unknown>[]) {
     const brandId = r.health_brand_id as number | null;
     if (brandId == null) continue;
+    const name = r.name as string | null;
     const status = r.status as string | null;
     const thresholdMs = r.date_passed_provider_threshold as number | null;
     const storePresenceCount = r.store_presence_count as number | null;
 
     productCountByBrand.set(brandId, (productCountByBrand.get(brandId) ?? 0) + 1);
-    storePresenceCountByBrand.set(brandId, (storePresenceCountByBrand.get(brandId) ?? 0) + (storePresenceCount ?? 0));
+    if (storePresenceCount != null) {
+      const list = productShareCountsByBrand.get(brandId) ?? [];
+      list.push({ name: name ?? "Unnamed product", count: storePresenceCount });
+      productShareCountsByBrand.set(brandId, list);
+    }
     if (status === "pending_board_review") pendingBoardReview.add(brandId);
     else if (status === "rejected_by_board") rejectedByBoard.add(brandId);
     else approvedProductBrands.add(brandId); // any other status = approved
@@ -456,7 +494,7 @@ export async function getBrands(): Promise<Brand[]> {
       BRAND_CREATED_AT: onboarding?.BRAND_CREATED_AT ?? stg.CREATED_AT,
       ANY_ADMIN_LAST_SIGNED_IN_AT: onboarding?.ANY_ADMIN_LAST_SIGNED_IN_AT ?? null,
       PRODUCTS_COUNT: productCountByBrand.get(brandId) ?? 0,
-      STORE_PRESENCE_COUNT: storePresenceCountByBrand.get(brandId) ?? 0,
+      PRODUCT_SHARE_COUNTS: productShareCountsByBrand.get(brandId) ?? [],
       REVIEWS_REQUESTED: onboarding?.REVIEWS_REQUESTED ?? 0,
       HAS_REVIEWS_READY: onboarding?.HAS_REVIEWS_READY ?? false,
       CA_REQUESTED: onboarding?.CA_REQUESTED ?? 0,
@@ -474,6 +512,8 @@ export async function getBrands(): Promise<Brand[]> {
       WIDGET_TYPES: Object.keys(widgetStatusByBrand.get(brandId) ?? {}),
       WIDGET_STATUSES: widgetStatusByBrand.get(brandId) ?? {},
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
+      ONBOARDING_CHANNEL: onboardingChannelByBrand.get(brandId) ?? null,
+      REVIEWS_DELIVERED: reviewsDeliveredByBrand.get(brandId) ?? 0,
       FOLLOWUP_SNOOZE_UNTIL: f.FOLLOWUP_SNOOZE_UNTIL || null,
       FOLLOWUPS_DISABLED: f.FOLLOWUPS_DISABLED === "true",
     };
