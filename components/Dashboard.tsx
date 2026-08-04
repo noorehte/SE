@@ -534,6 +534,14 @@ function KanbanView({
   );
 }
 
+// One entry per filterable table column. "text" does a case-insensitive
+// substring match; "min" parses the filter value as a number and keeps rows
+// whose field is >= it; "select" is an exact match against a fixed option list.
+type ColumnFilterConfig =
+  | { kind: "text"; field: keyof Brand }
+  | { kind: "min"; field: keyof Brand }
+  | { kind: "select"; field: keyof Brand; options: { value: string; label: string }[] };
+
 function TableView({
   brands,
   columns,
@@ -549,13 +557,46 @@ function TableView({
 }) {
   const [sortKey, setSortKey] = useState<keyof Brand>("BRAND_NAME");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
 
   function toggleSort(key: keyof Brand) {
     if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
   }
 
-  const sorted = [...brands].sort((a, b) => {
+  const FILTER_CONFIG: Record<string, ColumnFilterConfig> = {
+    BRAND_NAME: { kind: "text", field: "BRAND_NAME" },
+    PIPELINE_STATUS: { kind: "select", field: "PIPELINE_STATUS", options: columns.map((c) => ({ value: c.id, label: c.label })) },
+    SE_OWNER: { kind: "text", field: "SE_OWNER" },
+    ACCOUNT_MANAGER: { kind: "text", field: "ACCOUNT_MANAGER" },
+    OPS_OWNER: { kind: "text", field: "OPS_OWNER" },
+    ONBOARDING_CHANNEL: { kind: "select", field: "ONBOARDING_CHANNEL", options: [{ value: "app", label: "Portal" }, { value: "external", label: "External" }] },
+    REVIEWS_DELIVERED: { kind: "min", field: "REVIEWS_DELIVERED" },
+    DAYS_IN_STATUS: { kind: "min", field: "DAYS_IN_STATUS" },
+  };
+
+  function matchesFilters(brand: Brand): boolean {
+    return Object.entries(columnFilters).every(([key, value]) => {
+      if (!value) return true;
+      const config = FILTER_CONFIG[key];
+      if (!config) return true;
+      const raw = brand[config.field];
+      if (config.kind === "text") {
+        return String(raw ?? "").toLowerCase().includes(value.toLowerCase());
+      }
+      if (config.kind === "select") {
+        return raw === value;
+      }
+      // "min"
+      const num = Number(value);
+      if (Number.isNaN(num)) return true;
+      return Number(raw ?? 0) >= num;
+    });
+  }
+
+  const filtered = brands.filter(matchesFilters);
+
+  const sorted = [...filtered].sort((a, b) => {
     const av = a[sortKey] ?? ""; const bv = b[sortKey] ?? "";
     return (sortDir === "asc" ? 1 : -1) * (av < bv ? -1 : av > bv ? 1 : 0);
   });
@@ -569,11 +610,80 @@ function TableView({
     );
   }
 
+  function FilterCell({ column }: { column: string }) {
+    const config = FILTER_CONFIG[column];
+    if (!config) return <td className="px-4 pb-2" />;
+    const value = columnFilters[column] ?? "";
+    const set = (v: string) => setColumnFilters((prev) => ({ ...prev, [column]: v }));
+    const inputStyle = {
+      width: "100%",
+      background: "rgba(255,255,255,0.05)",
+      border: "1px solid rgba(255,255,255,0.1)",
+      borderRadius: "6px",
+      padding: "3px 6px",
+      fontSize: "0.75rem",
+      color: "#fff",
+    };
+    return (
+      <td className="px-4 pb-2" onClick={(e) => e.stopPropagation()}>
+        {config.kind === "select" ? (
+          <select value={value} onChange={(e) => set(e.target.value)} style={inputStyle}>
+            <option value="">All</option>
+            {config.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        ) : (
+          <input
+            value={value}
+            onChange={(e) => set(e.target.value)}
+            placeholder={config.kind === "min" ? "min…" : "filter…"}
+            style={inputStyle}
+          />
+        )}
+      </td>
+    );
+  }
+
+  const hasActiveFilters = Object.values(columnFilters).some((v) => v);
+
   return (
-    <div className="rounded-xl overflow-hidden" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.4)" }}>
+          {sorted.length} of {brands.length} brands
+        </div>
+        <div className="flex items-center gap-2">
+          {hasActiveFilters && (
+            <button onClick={() => setColumnFilters({})}
+              className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+              style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
+              ✕ Clear column filters
+            </button>
+          )}
+          <button
+            onClick={() => exportBrandsCsv(sorted, columns)}
+            title="Export the rows currently shown in this table to CSV"
+            className="text-sm px-3 py-2 rounded-lg flex items-center gap-1.5"
+            style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.12)" }}>
+            <Download size={14} /> Export
+          </button>
+        </div>
+      </div>
+      <div className="rounded-xl overflow-hidden" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
       <table className="w-full">
         <thead style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
           <tr><Th label="Brand" field="BRAND_NAME" /><Th label="Status" field="PIPELINE_STATUS" /><Th label="SE" field="SE_OWNER" /><Th label="AM" field="ACCOUNT_MANAGER" /><Th label="Ops" field="OPS_OWNER" /><Th label="Portal" field="ONBOARDING_CHANNEL" /><Th label="Reviews" field="REVIEWS_DELIVERED" /><Th label="Days" field="DAYS_IN_STATUS" /><th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Call</th><th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th></tr>
+          <tr>
+            <FilterCell column="BRAND_NAME" />
+            <FilterCell column="PIPELINE_STATUS" />
+            <FilterCell column="SE_OWNER" />
+            <FilterCell column="ACCOUNT_MANAGER" />
+            <FilterCell column="OPS_OWNER" />
+            <FilterCell column="ONBOARDING_CHANNEL" />
+            <FilterCell column="REVIEWS_DELIVERED" />
+            <FilterCell column="DAYS_IN_STATUS" />
+            <td className="px-4 pb-2" />
+            <td className="px-4 pb-2" />
+          </tr>
         </thead>
         <tbody>
           {sorted.map((brand) => {
@@ -627,6 +737,7 @@ function TableView({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
