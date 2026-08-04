@@ -6,7 +6,7 @@ import { LayoutGrid, Users, AlertCircle, BarChart2 } from "lucide-react";
 
 const NAV = [
   { label: "Pipeline",    href: "/",        icon: <LayoutGrid size={15} />, key: "pipeline" },
-  { label: "All brands",  href: "/brands",  icon: <Users size={15} />,      key: "brands" },
+  { label: "Table view",  href: "/brands",  icon: <Users size={15} />,      key: "brands" },
   { label: "Alerts",      href: "/alerts",  icon: <AlertCircle size={15} />, key: "alerts" },
   { label: "Analytics",   href: "/analytics", icon: <BarChart2 size={15} />, key: "analytics" },
 ];

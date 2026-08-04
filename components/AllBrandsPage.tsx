@@ -4,18 +4,55 @@ import { useState } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
 import { ALL_COLUMNS } from "./Dashboard";
 import Sidebar from "./Sidebar";
-import { Search } from "lucide-react";
+import { Download, Search } from "lucide-react";
 
 const SE_OWNERS = ["maha", "noor", "naumaan"];
 
+function csvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function exportBrandsCsv(brands: Brand[]) {
+  const statusLabel = (status: PipelineStatus) => ALL_COLUMNS.find((c) => c.id === status)?.label ?? status;
+  const header = ["Brand", "Status", "SE", "AM", "Ops", "Days in Status", "Products", "Churned"];
+  const rows = brands.map((b) => [
+    csvCell(b.BRAND_NAME),
+    csvCell(statusLabel(b.PIPELINE_STATUS)),
+    csvCell(b.SE_OWNER ?? ""),
+    csvCell(b.ACCOUNT_MANAGER ?? ""),
+    csvCell(b.OPS_OWNER ?? ""),
+    String(b.DAYS_IN_STATUS),
+    String(b.PRODUCTS_COUNT),
+    csvCell(b.PIPELINE_STATUS === "churned" ? new Date(b.STATUS_ENTERED_AT).toLocaleDateString() : ""),
+  ]);
+  const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `table-view-brands-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// One entry per filterable table column. "text" does a case-insensitive
+// substring match; "min" parses the filter value as a number and keeps rows
+// whose field is >= it; "select" is an exact match against a fixed option list.
+type ColumnFilterConfig =
+  | { kind: "text"; field: keyof Brand }
+  | { kind: "min"; field: keyof Brand }
+  | { kind: "select"; field: keyof Brand; options: { value: string; label: string }[] };
+
 export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[] }) {
-  const [brands] = useState(initialBrands);
+  const [brands, setBrands] = useState(initialBrands);
   const [search, setSearch] = useState("");
   const [seFilter, setSeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [widgetFilter, setWidgetFilter] = useState("all");
   const [sortKey, setSortKey] = useState<keyof Brand>("BRAND_NAME");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
 
   const filtered = brands
     .filter((b) => b.BRAND_NAME.toLowerCase().includes(search.toLowerCase()))
@@ -23,7 +60,37 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
     .filter((b) => statusFilter === "all" || b.PIPELINE_STATUS === statusFilter)
     .filter((b) => widgetFilter === "all" || b.WIDGET_TYPES.includes(widgetFilter));
 
-  const sorted = [...filtered].sort((a, b) => {
+  const FILTER_CONFIG: Record<string, ColumnFilterConfig> = {
+    BRAND_NAME: { kind: "text", field: "BRAND_NAME" },
+    PIPELINE_STATUS: { kind: "select", field: "PIPELINE_STATUS", options: ALL_COLUMNS.map((c) => ({ value: c.id, label: c.label })) },
+    SE_OWNER: { kind: "text", field: "SE_OWNER" },
+    ACCOUNT_MANAGER: { kind: "text", field: "ACCOUNT_MANAGER" },
+    OPS_OWNER: { kind: "text", field: "OPS_OWNER" },
+    DAYS_IN_STATUS: { kind: "min", field: "DAYS_IN_STATUS" },
+    PRODUCTS_COUNT: { kind: "min", field: "PRODUCTS_COUNT" },
+  };
+
+  function matchesColumnFilters(brand: Brand): boolean {
+    return Object.entries(columnFilters).every(([key, value]) => {
+      if (!value) return true;
+      const config = FILTER_CONFIG[key];
+      if (!config) return true;
+      const raw = brand[config.field];
+      if (config.kind === "text") {
+        return String(raw ?? "").toLowerCase().includes(value.toLowerCase());
+      }
+      if (config.kind === "select") {
+        return raw === value;
+      }
+      const num = Number(value);
+      if (Number.isNaN(num)) return true;
+      return Number(raw ?? 0) >= num;
+    });
+  }
+
+  const columnFiltered = filtered.filter(matchesColumnFilters);
+
+  const sorted = [...columnFiltered].sort((a, b) => {
     const av = a[sortKey] ?? ""; const bv = b[sortKey] ?? "";
     return (sortDir === "asc" ? 1 : -1) * (av < bv ? -1 : av > bv ? 1 : 0);
   });
@@ -31,6 +98,34 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
   function toggleSort(key: keyof Brand) {
     if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
+  }
+
+  async function moveBrand(brandId: number, newStatus: PipelineStatus) {
+    const prevStatus = brands.find((b) => b.BRAND_ID === brandId)?.PIPELINE_STATUS;
+    setBrands((prev) =>
+      prev.map((b) => (b.BRAND_ID === brandId ? { ...b, PIPELINE_STATUS: newStatus } : b))
+    );
+    try {
+      const res = await fetch("/api/overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, status: newStatus }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Save failed (${res.status})`);
+      }
+    } catch (e) {
+      // The optimistic move above was never persisted — roll it back so the
+      // table reflects reality instead of quietly reverting on next refresh
+      // with no explanation.
+      if (prevStatus) {
+        setBrands((prev) =>
+          prev.map((b) => (b.BRAND_ID === brandId ? { ...b, PIPELINE_STATUS: prevStatus } : b))
+        );
+      }
+      alert(`Couldn't save status change: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   function Th({ label, field }: { label: string; field: keyof Brand }) {
@@ -42,14 +137,67 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
     );
   }
 
+  function FilterCell({ column }: { column: string }) {
+    const config = FILTER_CONFIG[column];
+    if (!config) return <td className="px-4 pb-2" />;
+    const value = columnFilters[column] ?? "";
+    const set = (v: string) => setColumnFilters((prev) => ({ ...prev, [column]: v }));
+    const inputStyle = {
+      width: "100%",
+      background: "rgba(255,255,255,0.05)",
+      border: "1px solid rgba(255,255,255,0.1)",
+      borderRadius: "6px",
+      padding: "3px 6px",
+      fontSize: "0.75rem",
+      color: "#fff",
+    };
+    return (
+      <td className="px-4 pb-2">
+        {config.kind === "select" ? (
+          <select value={value} onChange={(e) => set(e.target.value)} style={inputStyle}>
+            <option value="">All</option>
+            {config.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        ) : (
+          <input
+            value={value}
+            onChange={(e) => set(e.target.value)}
+            placeholder={config.kind === "min" ? "min…" : "filter…"}
+            style={inputStyle}
+          />
+        )}
+      </td>
+    );
+  }
+
+  const hasActiveColumnFilters = Object.values(columnFilters).some((v) => v);
+
   return (
     <div className="flex min-h-screen" style={{ background: "#0d1b26", color: "#fff" }}>
       <Sidebar active="brands" />
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Header */}
-        <div className="px-8 py-5 flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-          <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff" }}>All brands</h1>
-          <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>{sorted.length} brands</p>
+        <div className="px-8 py-5 flex items-center justify-between flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <div>
+            <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff" }}>Table view</h1>
+            <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>{sorted.length} of {brands.length} brands</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {hasActiveColumnFilters && (
+              <button onClick={() => setColumnFilters({})}
+                className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+                style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
+                ✕ Clear column filters
+              </button>
+            )}
+            <button
+              onClick={() => exportBrandsCsv(sorted)}
+              title="Export the rows currently shown to CSV"
+              className="text-sm px-3 py-2 rounded-lg flex items-center gap-1.5"
+              style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.12)" }}>
+              <Download size={14} /> Export
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -94,6 +242,17 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                   <Th label="Churned" field="PIPELINE_STATUS" />
                   <th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th>
                 </tr>
+                <tr>
+                  <FilterCell column="BRAND_NAME" />
+                  <FilterCell column="PIPELINE_STATUS" />
+                  <FilterCell column="SE_OWNER" />
+                  <FilterCell column="ACCOUNT_MANAGER" />
+                  <FilterCell column="OPS_OWNER" />
+                  <FilterCell column="DAYS_IN_STATUS" />
+                  <FilterCell column="PRODUCTS_COUNT" />
+                  <td className="px-4 pb-2" />
+                  <td className="px-4 pb-2" />
+                </tr>
               </thead>
               <tbody>
                 {sorted.map((brand) => {
@@ -109,9 +268,11 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                         {brand.BRAND_NAME}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: (col?.accent ?? "#333") + "22", color: col?.accent ?? "#fff" }}>
-                          {col?.label ?? brand.PIPELINE_STATUS}
-                        </span>
+                        <select value={brand.PIPELINE_STATUS} onChange={(e) => moveBrand(brand.BRAND_ID, e.target.value as PipelineStatus)}
+                          className="rounded-full border-0 cursor-pointer px-2 py-0.5"
+                          style={{ background: (col?.accent ?? "#333") + "22", color: col?.accent ?? "#fff", fontSize: "0.8rem" }}>
+                          {ALL_COLUMNS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                        </select>
                       </td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.SE_OWNER ?? "—"}</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ACCOUNT_MANAGER ?? "—"}</td>
