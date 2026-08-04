@@ -115,6 +115,7 @@ export interface Brand {
   HAS_PAYMENT_METHOD: boolean;
   SUBMITTED_TO_MAB: boolean;
   PRODUCTS_COUNT: number;
+  PRODUCTS_APPROVED_COUNT: number; // products not pending_board_review/rejected_by_board — out of PRODUCTS_COUNT
   PRODUCT_SHARE_COUNTS: { name: string; count: number }[]; // per-product store_presence_count, not summed
   REVIEWS_REQUESTED: number;
   HAS_REVIEWS_READY: boolean;
@@ -427,6 +428,7 @@ export async function getBrands(): Promise<Brand[]> {
   const shareThresholdMet = new Set<number>();
   const firstThresholdDate = new Map<number, string>(); // when share threshold was first met
   const productCountByBrand = new Map<number, number>();
+  const approvedProductCountByBrand = new Map<number, number>();
   const productShareCountsByBrand = new Map<number, { name: string; count: number }[]>();
   for (const r of productRows as Record<string, unknown>[]) {
     const brandId = r.health_brand_id as number | null;
@@ -444,7 +446,10 @@ export async function getBrands(): Promise<Brand[]> {
     }
     if (status === "pending_board_review") pendingBoardReview.add(brandId);
     else if (status === "rejected_by_board") rejectedByBoard.add(brandId);
-    else approvedProductBrands.add(brandId); // any other status = approved
+    else {
+      approvedProductBrands.add(brandId); // any other status = approved
+      approvedProductCountByBrand.set(brandId, (approvedProductCountByBrand.get(brandId) ?? 0) + 1);
+    }
     if (typeof thresholdMs === "number") {
       const thresholdIso = new Date(thresholdMs).toISOString();
       shareThresholdMet.add(brandId);
@@ -494,6 +499,7 @@ export async function getBrands(): Promise<Brand[]> {
       BRAND_CREATED_AT: onboarding?.BRAND_CREATED_AT ?? stg.CREATED_AT,
       ANY_ADMIN_LAST_SIGNED_IN_AT: onboarding?.ANY_ADMIN_LAST_SIGNED_IN_AT ?? null,
       PRODUCTS_COUNT: productCountByBrand.get(brandId) ?? 0,
+      PRODUCTS_APPROVED_COUNT: approvedProductCountByBrand.get(brandId) ?? 0,
       PRODUCT_SHARE_COUNTS: productShareCountsByBrand.get(brandId) ?? [],
       REVIEWS_REQUESTED: onboarding?.REVIEWS_REQUESTED ?? 0,
       HAS_REVIEWS_READY: onboarding?.HAS_REVIEWS_READY ?? false,

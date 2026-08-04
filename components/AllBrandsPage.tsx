@@ -14,7 +14,7 @@ function csvCell(value: string): string {
 
 function exportBrandsCsv(brands: Brand[]) {
   const statusLabel = (status: PipelineStatus) => ALL_COLUMNS.find((c) => c.id === status)?.label ?? status;
-  const header = ["Brand", "Status", "SE", "AM", "Ops", "Days in Status", "Products", "Churned"];
+  const header = ["Brand", "Status", "SE", "AM", "Ops", "Days in Status", "Products Approved", "Products Total", "Churned"];
   const rows = brands.map((b) => [
     csvCell(b.BRAND_NAME),
     csvCell(statusLabel(b.PIPELINE_STATUS)),
@@ -22,6 +22,7 @@ function exportBrandsCsv(brands: Brand[]) {
     csvCell(b.ACCOUNT_MANAGER ?? ""),
     csvCell(b.OPS_OWNER ?? ""),
     String(b.DAYS_IN_STATUS),
+    String(b.PRODUCTS_APPROVED_COUNT),
     String(b.PRODUCTS_COUNT),
     csvCell(b.PIPELINE_STATUS === "churned" ? new Date(b.STATUS_ENTERED_AT).toLocaleDateString() : ""),
   ]);
@@ -77,7 +78,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
     ACCOUNT_MANAGER: { kind: "select", field: "ACCOUNT_MANAGER", options: distinctOwnerOptions("ACCOUNT_MANAGER") },
     OPS_OWNER: { kind: "select", field: "OPS_OWNER", options: distinctOwnerOptions("OPS_OWNER") },
     DAYS_IN_STATUS: { kind: "min", field: "DAYS_IN_STATUS" },
-    PRODUCTS_COUNT: { kind: "min", field: "PRODUCTS_COUNT" },
+    PRODUCTS_APPROVED_COUNT: { kind: "min", field: "PRODUCTS_APPROVED_COUNT" },
   };
 
   function matchesColumnFilters(brand: Brand): boolean {
@@ -254,7 +255,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                   <Th label="AM" field="ACCOUNT_MANAGER" />
                   <Th label="Ops" field="OPS_OWNER" />
                   <Th label="Days" field="DAYS_IN_STATUS" />
-                  <Th label="Products" field="PRODUCTS_COUNT" />
+                  <Th label="Products Approved" field="PRODUCTS_APPROVED_COUNT" />
                   <Th label="Churned" field="PIPELINE_STATUS" />
                   <th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th>
                 </tr>
@@ -265,7 +266,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                   <FilterCell column="ACCOUNT_MANAGER" />
                   <FilterCell column="OPS_OWNER" />
                   <FilterCell column="DAYS_IN_STATUS" />
-                  <FilterCell column="PRODUCTS_COUNT" />
+                  <FilterCell column="PRODUCTS_APPROVED_COUNT" />
                   <td className="px-4 pb-2" />
                   <td className="px-4 pb-2" />
                 </tr>
@@ -294,7 +295,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ACCOUNT_MANAGER ?? "—"}</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.OPS_OWNER ?? "—"}</td>
                       <td className="px-4 py-3 font-semibold" style={{ color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.4)", fontSize: "0.875rem" }}>{brand.DAYS_IN_STATUS}d</td>
-                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{brand.PRODUCTS_COUNT}</td>
+                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{brand.PRODUCTS_APPROVED_COUNT} / {brand.PRODUCTS_COUNT}</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>
                         {brand.PIPELINE_STATUS === "churned" ? new Date(brand.STATUS_ENTERED_AT).toLocaleDateString() : "—"}
                       </td>
