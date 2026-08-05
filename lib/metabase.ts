@@ -141,9 +141,9 @@ export interface Brand {
   BADGE_READY_DATE: string | null;
   REVIEWS_READY_DATE: string | null;
   CAI_READY_DATE: string | null;
-  BADGE_IMPLEMENTED: boolean; // badge_ready_email_sent_at is set
-  REVIEWS_IMPLEMENTED: boolean; // reviews_ready_email_sent_at is set
-  CAI_IMPLEMENTED: boolean; // cai_ready_email_sent_at is set
+  BADGE_IMPLEMENTED: boolean; // quant/sticker widget is currently live (isLive), not just that the ready-email was sent
+  REVIEWS_IMPLEMENTED: boolean; // qual widget is currently live
+  CAI_IMPLEMENTED: boolean; // gpt/analysis/gpt_s widget is currently live
   // Automated snippet follow-ups (SE-tracker controls, stored as field overrides):
   FOLLOWUP_SNOOZE_UNTIL: string | null; // ISO date — send one agnostic follow-up on this date, then stop
   FOLLOWUPS_DISABLED: boolean;           // hard-off switch for this brand
@@ -218,7 +218,7 @@ export async function getBrands(): Promise<Brand[]> {
   // No explicit field list for table 203 here (unlike the other tables) — we
   // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, onboardingChannelRows, reviewsDeliveredRows, impEmailRows, readyDateRows] = await Promise.all([
+  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, onboardingChannelRows, reviewsDeliveredRows, readyDateRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
     // health_brand_products has 5,900+ rows — table 202 (Metabase's mirror)
@@ -276,13 +276,6 @@ export async function getBrands(): Promise<Brand[]> {
       join health_brand_products hbp on hbp.id = n.health_brand_product_id
       where n.share_with_brands and hbp.discarded_at is null
       group by 1
-    `),
-    // Implementation-email timestamps, straight from health_brands — presence
-    // of a timestamp is the Y/N signal for whether that snippet's "ready"
-    // email has gone out.
-    queryGrafanaPostgres(`
-      select id as health_brand_id, badge_ready_email_sent_at, reviews_ready_email_sent_at, cai_ready_email_sent_at
-      from health_brands
     `),
     // Ready dates per snippet type — same rules as lib/followups/detect.ts,
     // with CA corrected to match the Rails app's actual "ready" definition
@@ -480,14 +473,21 @@ export async function getBrands(): Promise<Brand[]> {
   // Grafana's Postgres datasource returns timestamps as epoch ms.
   const toIso = (v: unknown): string | null => (typeof v === "number" ? new Date(v).toISOString() : null);
 
-  const impEmailByBrand = new Map<number, { badge: boolean; reviews: boolean; cai: boolean }>();
-  for (const r of impEmailRows as Record<string, unknown>[]) {
-    const brandId = r.health_brand_id as number | null;
-    if (brandId == null) continue;
-    impEmailByBrand.set(brandId, {
-      badge: r.badge_ready_email_sent_at != null,
-      reviews: r.reviews_ready_email_sent_at != null,
-      cai: r.cai_ready_email_sent_at != null,
+  // "Implemented" means the widget is actually live, not that the ready-email
+  // went out — a brand can have badge_ready_email_sent_at/cai_ready_email_sent_at
+  // set on health_brands while never having gone live (e.g. Mars Men: both
+  // emails sent, but every widget's first_view_date is still null). Reuses the
+  // same isLive computed for WIDGET_STATUSES above (first_view_date set AND
+  // last_view_date null), so this reflects real Grafana/Postgres widget data
+  // rather than an email-sent flag that can fire before implementation happens.
+  const isTypeLive = (statuses: Record<string, WidgetTypeStatus> | undefined, types: string[]) =>
+    types.some((t) => statuses?.[t]?.isLive);
+  const implementedByBrand = new Map<number, { badge: boolean; reviews: boolean; cai: boolean }>();
+  for (const [brandId, statuses] of widgetStatusByBrand) {
+    implementedByBrand.set(brandId, {
+      badge: isTypeLive(statuses, ["quant", "sticker"]),
+      reviews: isTypeLive(statuses, ["qual"]),
+      cai: isTypeLive(statuses, ["gpt", "analysis", "gpt_s"]),
     });
   }
 
@@ -606,9 +606,9 @@ export async function getBrands(): Promise<Brand[]> {
       BADGE_READY_DATE: readyDatesByBrand.get(brandId)?.badge ?? null,
       REVIEWS_READY_DATE: readyDatesByBrand.get(brandId)?.reviews ?? null,
       CAI_READY_DATE: readyDatesByBrand.get(brandId)?.cai ?? null,
-      BADGE_IMPLEMENTED: impEmailByBrand.get(brandId)?.badge ?? false,
-      REVIEWS_IMPLEMENTED: impEmailByBrand.get(brandId)?.reviews ?? false,
-      CAI_IMPLEMENTED: impEmailByBrand.get(brandId)?.cai ?? false,
+      BADGE_IMPLEMENTED: implementedByBrand.get(brandId)?.badge ?? false,
+      REVIEWS_IMPLEMENTED: implementedByBrand.get(brandId)?.reviews ?? false,
+      CAI_IMPLEMENTED: implementedByBrand.get(brandId)?.cai ?? false,
       FOLLOWUP_SNOOZE_UNTIL: f.FOLLOWUP_SNOOZE_UNTIL || null,
       FOLLOWUPS_DISABLED: f.FOLLOWUPS_DISABLED === "true",
     };
