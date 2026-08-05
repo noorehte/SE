@@ -14,16 +14,34 @@ function csvCell(value: string): string {
 
 function exportBrandsCsv(brands: Brand[]) {
   const statusLabel = (status: PipelineStatus) => ALL_COLUMNS.find((c) => c.id === status)?.label ?? status;
-  const header = ["Brand", "Status", "SE", "AM", "Ops", "Days in Status", "Products Approved", "Products Total", "Churned"];
+  const header = [
+    "Brand", "Status", "SE", "AM", "Ops", "Segment",
+    "Onboarded via Brand Portal", "Brand Portal Access", "Sign On Date",
+    "Days in Status", "Products Approved", "Products Total", "Reviews Delivered",
+    "Badge Ready Date", "Reviews Ready Date", "CAI Ready Date",
+    "Badge Imp (Y/N)", "Reviews Imp (Y/N)", "CAI Imp (Y/N)",
+    "Churned",
+  ];
   const rows = brands.map((b) => [
     csvCell(b.BRAND_NAME),
     csvCell(statusLabel(b.PIPELINE_STATUS)),
     csvCell(b.SE_OWNER ?? ""),
     csvCell(b.ACCOUNT_MANAGER ?? ""),
     csvCell(b.OPS_OWNER ?? ""),
+    csvCell(b.KIND ?? ""),
+    b.ONBOARDING_CHANNEL === "app" ? "Y" : "N",
+    b.ONBOARDING_CHANNEL === "app" ? "Y" : "N",
+    csvCell(new Date(b.BRAND_CREATED_AT).toLocaleDateString()),
     String(b.DAYS_IN_STATUS),
     String(b.PRODUCTS_APPROVED_COUNT),
     String(b.PRODUCTS_COUNT),
+    String(b.REVIEWS_DELIVERED),
+    csvCell(b.BADGE_READY_DATE ? new Date(b.BADGE_READY_DATE).toLocaleDateString() : ""),
+    csvCell(b.REVIEWS_READY_DATE ? new Date(b.REVIEWS_READY_DATE).toLocaleDateString() : ""),
+    csvCell(b.CAI_READY_DATE ? new Date(b.CAI_READY_DATE).toLocaleDateString() : ""),
+    b.BADGE_IMPLEMENTED ? "Y" : "N",
+    b.REVIEWS_IMPLEMENTED ? "Y" : "N",
+    b.CAI_IMPLEMENTED ? "Y" : "N",
     csvCell(b.PIPELINE_STATUS === "churned" ? new Date(b.STATUS_ENTERED_AT).toLocaleDateString() : ""),
   ]);
   const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -61,9 +79,9 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
     .filter((b) => statusFilter === "all" || b.PIPELINE_STATUS === statusFilter)
     .filter((b) => widgetFilter === "all" || b.WIDGET_TYPES.includes(widgetFilter));
 
-  // Distinct owner names actually present in the data — Account Manager and
-  // Ops aren't drawn from a fixed roster the way SE nominally is.
-  function distinctOwnerOptions(field: "ACCOUNT_MANAGER" | "OPS_OWNER") {
+  // Distinct string values actually present in the data — Account Manager,
+  // Ops, and Segment aren't drawn from a fixed roster the way SE nominally is.
+  function distinctStringOptions(field: "ACCOUNT_MANAGER" | "OPS_OWNER" | "KIND") {
     const names = Array.from(new Set(brands.map((b) => b[field]).filter((n): n is string => !!n))).sort();
     return names.map((n) => ({ value: n, label: n }));
   }
@@ -75,10 +93,16 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
     // "Company owner" field (see lib/hubspot.ts), which isn't scoped to SEs and
     // can hold names like account execs. The dropdown shouldn't offer those.
     SE_OWNER: { kind: "select", field: "SE_OWNER", options: SE_OWNERS.map((se) => ({ value: se, label: se })) },
-    ACCOUNT_MANAGER: { kind: "select", field: "ACCOUNT_MANAGER", options: distinctOwnerOptions("ACCOUNT_MANAGER") },
-    OPS_OWNER: { kind: "select", field: "OPS_OWNER", options: distinctOwnerOptions("OPS_OWNER") },
+    ACCOUNT_MANAGER: { kind: "select", field: "ACCOUNT_MANAGER", options: distinctStringOptions("ACCOUNT_MANAGER") },
+    OPS_OWNER: { kind: "select", field: "OPS_OWNER", options: distinctStringOptions("OPS_OWNER") },
+    KIND: { kind: "select", field: "KIND", options: distinctStringOptions("KIND") },
+    ONBOARDING_CHANNEL: { kind: "select", field: "ONBOARDING_CHANNEL", options: [{ value: "app", label: "Portal" }, { value: "external", label: "External" }] },
     DAYS_IN_STATUS: { kind: "min", field: "DAYS_IN_STATUS" },
     PRODUCTS_APPROVED_COUNT: { kind: "min", field: "PRODUCTS_APPROVED_COUNT" },
+    REVIEWS_DELIVERED: { kind: "min", field: "REVIEWS_DELIVERED" },
+    BADGE_IMPLEMENTED: { kind: "select", field: "BADGE_IMPLEMENTED", options: [{ value: "true", label: "Y" }, { value: "false", label: "N" }] },
+    REVIEWS_IMPLEMENTED: { kind: "select", field: "REVIEWS_IMPLEMENTED", options: [{ value: "true", label: "Y" }, { value: "false", label: "N" }] },
+    CAI_IMPLEMENTED: { kind: "select", field: "CAI_IMPLEMENTED", options: [{ value: "true", label: "Y" }, { value: "false", label: "N" }] },
   };
 
   function matchesColumnFilters(brand: Brand): boolean {
@@ -97,7 +121,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
         if (key === "SE_OWNER") {
           return typeof raw === "string" && raw.toLowerCase().startsWith(value.toLowerCase());
         }
-        return raw === value;
+        return String(raw) === value;
       }
       const num = Number(value);
       if (Number.isNaN(num)) return true;
@@ -254,8 +278,18 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                   <Th label="SE" field="SE_OWNER" />
                   <Th label="AM" field="ACCOUNT_MANAGER" />
                   <Th label="Ops" field="OPS_OWNER" />
+                  <Th label="Segment" field="KIND" />
+                  <Th label="Portal" field="ONBOARDING_CHANNEL" />
+                  <Th label="Sign On Date" field="BRAND_CREATED_AT" />
                   <Th label="Days" field="DAYS_IN_STATUS" />
                   <Th label="Products Approved" field="PRODUCTS_APPROVED_COUNT" />
+                  <Th label="Reviews Delivered" field="REVIEWS_DELIVERED" />
+                  <Th label="Badge Ready" field="BADGE_READY_DATE" />
+                  <Th label="Reviews Ready" field="REVIEWS_READY_DATE" />
+                  <Th label="CAI Ready" field="CAI_READY_DATE" />
+                  <Th label="Badge Imp" field="BADGE_IMPLEMENTED" />
+                  <Th label="Reviews Imp" field="REVIEWS_IMPLEMENTED" />
+                  <Th label="CAI Imp" field="CAI_IMPLEMENTED" />
                   <Th label="Churned" field="PIPELINE_STATUS" />
                   <th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th>
                 </tr>
@@ -265,8 +299,18 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                   <FilterCell column="SE_OWNER" />
                   <FilterCell column="ACCOUNT_MANAGER" />
                   <FilterCell column="OPS_OWNER" />
+                  <FilterCell column="KIND" />
+                  <FilterCell column="ONBOARDING_CHANNEL" />
+                  <td className="px-4 pb-2" />
                   <FilterCell column="DAYS_IN_STATUS" />
                   <FilterCell column="PRODUCTS_APPROVED_COUNT" />
+                  <FilterCell column="REVIEWS_DELIVERED" />
+                  <td className="px-4 pb-2" />
+                  <td className="px-4 pb-2" />
+                  <td className="px-4 pb-2" />
+                  <FilterCell column="BADGE_IMPLEMENTED" />
+                  <FilterCell column="REVIEWS_IMPLEMENTED" />
+                  <FilterCell column="CAI_IMPLEMENTED" />
                   <td className="px-4 pb-2" />
                   <td className="px-4 pb-2" />
                 </tr>
@@ -277,6 +321,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                   const col = ALL_COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
                   const hubspotUrl = brand.HUBSPOT_COMPANY_ID ? `https://app-na2.hubspot.com/contacts/46815331/record/0-2/${brand.HUBSPOT_COMPANY_ID}` : null;
                   const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
+                  const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : "—");
                   return (
                     <tr key={brand.BRAND_ID} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
                       onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
@@ -294,8 +339,20 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.SE_OWNER ?? "—"}</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ACCOUNT_MANAGER ?? "—"}</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.OPS_OWNER ?? "—"}</td>
+                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.KIND ?? "—"}</td>
+                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>
+                        {brand.ONBOARDING_CHANNEL === "app" ? "Portal" : brand.ONBOARDING_CHANNEL === "external" ? "External" : "—"}
+                      </td>
+                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{fmtDate(brand.BRAND_CREATED_AT)}</td>
                       <td className="px-4 py-3 font-semibold" style={{ color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.4)", fontSize: "0.875rem" }}>{brand.DAYS_IN_STATUS}d</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{brand.PRODUCTS_APPROVED_COUNT} / {brand.PRODUCTS_COUNT}</td>
+                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{brand.REVIEWS_DELIVERED}</td>
+                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{fmtDate(brand.BADGE_READY_DATE)}</td>
+                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{fmtDate(brand.REVIEWS_READY_DATE)}</td>
+                      <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{fmtDate(brand.CAI_READY_DATE)}</td>
+                      <td className="px-4 py-3" style={{ color: brand.BADGE_IMPLEMENTED ? "#4caf82" : "rgba(255,255,255,0.3)", fontSize: "0.875rem" }}>{brand.BADGE_IMPLEMENTED ? "Y" : "N"}</td>
+                      <td className="px-4 py-3" style={{ color: brand.REVIEWS_IMPLEMENTED ? "#4caf82" : "rgba(255,255,255,0.3)", fontSize: "0.875rem" }}>{brand.REVIEWS_IMPLEMENTED ? "Y" : "N"}</td>
+                      <td className="px-4 py-3" style={{ color: brand.CAI_IMPLEMENTED ? "#4caf82" : "rgba(255,255,255,0.3)", fontSize: "0.875rem" }}>{brand.CAI_IMPLEMENTED ? "Y" : "N"}</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>
                         {brand.PIPELINE_STATUS === "churned" ? new Date(brand.STATUS_ENTERED_AT).toLocaleDateString() : "—"}
                       </td>

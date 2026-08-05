@@ -138,6 +138,12 @@ export interface Brand {
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
   ONBOARDING_CHANNEL: "app" | "external" | null; // "app" = onboarded via Brand Portal (and has portal access)
   REVIEWS_DELIVERED: number;
+  BADGE_READY_DATE: string | null;
+  REVIEWS_READY_DATE: string | null;
+  CAI_READY_DATE: string | null;
+  BADGE_IMPLEMENTED: boolean; // badge_ready_email_sent_at is set
+  REVIEWS_IMPLEMENTED: boolean; // reviews_ready_email_sent_at is set
+  CAI_IMPLEMENTED: boolean; // cai_ready_email_sent_at is set
   // Automated snippet follow-ups (SE-tracker controls, stored as field overrides):
   FOLLOWUP_SNOOZE_UNTIL: string | null; // ISO date — send one agnostic follow-up on this date, then stop
   FOLLOWUPS_DISABLED: boolean;           // hard-off switch for this brand
@@ -212,7 +218,7 @@ export async function getBrands(): Promise<Brand[]> {
   // No explicit field list for table 203 here (unlike the other tables) — we
   // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, onboardingChannelRows, reviewsDeliveredRows] = await Promise.all([
+  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, onboardingChannelRows, reviewsDeliveredRows, impEmailRows, readyDateRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
     // health_brand_products has 5,900+ rows — table 202 (Metabase's mirror)
@@ -270,6 +276,48 @@ export async function getBrands(): Promise<Brand[]> {
       join health_brand_products hbp on hbp.id = n.health_brand_product_id
       where n.share_with_brands and hbp.discarded_at is null
       group by 1
+    `),
+    // Implementation-email timestamps, straight from health_brands — presence
+    // of a timestamp is the Y/N signal for whether that snippet's "ready"
+    // email has gone out.
+    queryGrafanaPostgres(`
+      select id as health_brand_id, badge_ready_email_sent_at, reviews_ready_email_sent_at, cai_ready_email_sent_at
+      from health_brands
+    `),
+    // Ready dates per snippet type — same rules as lib/followups/detect.ts:
+    //   Badge   → a product with store_presence_count >= 100 AND a provider-
+    //             threshold crossing date set.
+    //   Reviews → a review (notes row) with share_with_brands = true.
+    //   CA      → an approved product_assessment.
+    queryGrafanaPostgres(`
+      with badge as (
+        select health_brand_id as bid, min(date_passed_provider_threshold) as ready_at
+        from health_brand_products
+        where discarded_at is null
+          and store_presence_count >= 100
+          and date_passed_provider_threshold is not null
+        group by 1
+      ),
+      reviews as (
+        select hbp.health_brand_id as bid, min(n.created_at) as ready_at
+        from notes n join health_brand_products hbp on hbp.id = n.health_brand_product_id
+        where n.share_with_brands and hbp.discarded_at is null
+        group by 1
+      ),
+      ca as (
+        select hbp.health_brand_id as bid, min(pa.updated_at) as ready_at
+        from product_assessments pa join health_brand_products hbp on hbp.id = pa.health_brand_product_id
+        where pa.approved and hbp.discarded_at is null
+        group by 1
+      )
+      select
+        coalesce(badge.bid, reviews.bid, ca.bid) as health_brand_id,
+        badge.ready_at as badge_ready_at,
+        reviews.ready_at as reviews_ready_at,
+        ca.ready_at as ca_ready_at
+      from badge
+        full outer join reviews on reviews.bid = badge.bid
+        full outer join ca on ca.bid = coalesce(badge.bid, reviews.bid)
     `),
   ]);
 
@@ -419,6 +467,31 @@ export async function getBrands(): Promise<Brand[]> {
     reviewsDeliveredByBrand.set(brandId, Number(r.reviews_delivered ?? 0));
   }
 
+  // Grafana's Postgres datasource returns timestamps as epoch ms.
+  const toIso = (v: unknown): string | null => (typeof v === "number" ? new Date(v).toISOString() : null);
+
+  const impEmailByBrand = new Map<number, { badge: boolean; reviews: boolean; cai: boolean }>();
+  for (const r of impEmailRows as Record<string, unknown>[]) {
+    const brandId = r.health_brand_id as number | null;
+    if (brandId == null) continue;
+    impEmailByBrand.set(brandId, {
+      badge: r.badge_ready_email_sent_at != null,
+      reviews: r.reviews_ready_email_sent_at != null,
+      cai: r.cai_ready_email_sent_at != null,
+    });
+  }
+
+  const readyDatesByBrand = new Map<number, { badge: string | null; reviews: string | null; cai: string | null }>();
+  for (const r of readyDateRows as Record<string, unknown>[]) {
+    const brandId = r.health_brand_id as number | null;
+    if (brandId == null) continue;
+    readyDatesByBrand.set(brandId, {
+      badge: toIso(r.badge_ready_at),
+      reviews: toIso(r.reviews_ready_at),
+      cai: toIso(r.ca_ready_at),
+    });
+  }
+
   // Product status + count per brand — PRODUCTS_COUNT is computed directly from
   // health_brand_products (rather than trusted from table 447) so it works the
   // same way for every brand, whether or not it has an onboarding-portal record.
@@ -520,6 +593,12 @@ export async function getBrands(): Promise<Brand[]> {
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
       ONBOARDING_CHANNEL: onboardingChannelByBrand.get(brandId) ?? null,
       REVIEWS_DELIVERED: reviewsDeliveredByBrand.get(brandId) ?? 0,
+      BADGE_READY_DATE: readyDatesByBrand.get(brandId)?.badge ?? null,
+      REVIEWS_READY_DATE: readyDatesByBrand.get(brandId)?.reviews ?? null,
+      CAI_READY_DATE: readyDatesByBrand.get(brandId)?.cai ?? null,
+      BADGE_IMPLEMENTED: impEmailByBrand.get(brandId)?.badge ?? false,
+      REVIEWS_IMPLEMENTED: impEmailByBrand.get(brandId)?.reviews ?? false,
+      CAI_IMPLEMENTED: impEmailByBrand.get(brandId)?.cai ?? false,
       FOLLOWUP_SNOOZE_UNTIL: f.FOLLOWUP_SNOOZE_UNTIL || null,
       FOLLOWUPS_DISABLED: f.FOLLOWUPS_DISABLED === "true",
     };
