@@ -1,25 +1,33 @@
 import { getBrands } from "@/lib/metabase";
 import { getAllScheduled } from "@/lib/scheduled-calls";
 import { getCaiReadyBrands, buildCaiLookup } from "@/lib/cai-sheet";
+import { getReachouts, buildReachoutLookup } from "@/lib/reachouts-sheet";
 import Dashboard from "@/components/Dashboard";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   try {
-    const [brands, scheduledCalls, caiEntries] = await Promise.all([
+    const [brands, scheduledCalls, caiEntries, reachoutEntries] = await Promise.all([
       getBrands(),
       getAllScheduled().catch((e) => { console.error("getAllScheduled failed:", e); return {} as Record<string, never>; }),
       getCaiReadyBrands(),
+      getReachouts(),
     ]);
 
     const caiLookup = buildCaiLookup(caiEntries);
+    const reachoutLookup = buildReachoutLookup(reachoutEntries);
     const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-    const enrichedBrands = brands.map((b) => ({
-      ...b,
-      CAI_IMPLEMENTATION_READY: caiLookup.get(normalize(b.BRAND_NAME)) ?? null,
-    }));
+    const enrichedBrands = brands.map((b) => {
+      const reachout = reachoutLookup.get(normalize(b.BRAND_NAME));
+      return {
+        ...b,
+        CAI_IMPLEMENTATION_READY: caiLookup.get(normalize(b.BRAND_NAME)) ?? null,
+        REACHED_OUT: reachout?.emailed ?? null,
+        REACHED_OUT_SEND_LABEL: reachout?.sendLabel ?? null,
+      };
+    });
 
     return <Dashboard initialBrands={enrichedBrands} initialScheduledCalls={scheduledCalls} />;
   } catch (e) {
