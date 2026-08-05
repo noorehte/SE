@@ -284,11 +284,17 @@ export async function getBrands(): Promise<Brand[]> {
       select id as health_brand_id, badge_ready_email_sent_at, reviews_ready_email_sent_at, cai_ready_email_sent_at
       from health_brands
     `),
-    // Ready dates per snippet type — same rules as lib/followups/detect.ts:
+    // Ready dates per snippet type — same rules as lib/followups/detect.ts,
+    // with CA corrected to match the Rails app's actual "ready" definition
+    // (HealthBrand#cai_snippet_available?/cas_snippet_available?, which is
+    // what gates cai_ready_email_sent_at in lib/tasks/brand_onboarding.rake):
     //   Badge   → a product with store_presence_count >= 100 AND a provider-
     //             threshold crossing date set.
     //   Reviews → a review (notes row) with share_with_brands = true.
-    //   CA      → an approved product_assessment.
+    //   CA      → an approved product_assessment AND a matching gpt/analysis/
+    //             gpt_s widget on the SAME product both existing at once —
+    //             an approved assessment with no widget yet doesn't actually
+    //             trigger the real email or render any CAI content.
     queryGrafanaPostgres(`
       with badge as (
         select health_brand_id as bid, min(date_passed_provider_threshold) as ready_at
@@ -305,8 +311,12 @@ export async function getBrands(): Promise<Brand[]> {
         group by 1
       ),
       ca as (
-        select hbp.health_brand_id as bid, min(pa.updated_at) as ready_at
-        from product_assessments pa join health_brand_products hbp on hbp.id = pa.health_brand_product_id
+        select hbp.health_brand_id as bid, min(greatest(pa.updated_at, w.created_at)) as ready_at
+        from product_assessments pa
+          join health_brand_products hbp on hbp.id = pa.health_brand_product_id
+          join widgets w on w.health_brand_product_id = pa.health_brand_product_id
+            and w.presentation_type in ('gpt', 'analysis', 'gpt_s')
+            and w.discarded_at is null
         where pa.approved and hbp.discarded_at is null
         group by 1
       )

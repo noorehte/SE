@@ -26,14 +26,20 @@ export interface BrandSnippetStatus {
 
 // Per-brand, per-snippet "ready" (sent) + "live" status, straight from the
 // FrontRow app's Postgres via Grafana. "Ready"/sent rules, confirmed with
-// Naumaan (see the followups design memory):
+// Naumaan (see the followups design memory), with CA corrected to match the
+// Rails app's actual definition (HealthBrand#cai_snippet_available?/
+// cas_snippet_available?, the exact condition that gates cai_ready_email_sent_at
+// in lib/tasks/brand_onboarding.rake in frh-web-app):
 //   Badge   → a product with store_presence_count >= 100 AND a provider-threshold
 //             crossing date set. The threshold is moving to 100 going forward, so
 //             this only fires for brands crossing from that point on (historical
 //             brands crossed at ~50 and are intentionally excluded — but the
 //             store_presence_count >= 100 guard already handles that).
 //   Reviews → a review (notes row) with share_with_brands = true.
-//   CA      → an approved product_assessment.
+//   CA      → an approved product_assessment AND a matching gpt/analysis/gpt_s
+//             widget on the same product both existing — an approved
+//             assessment alone doesn't trigger the real email or render any
+//             CAI content without a widget already created.
 // "Live" mirrors lib/metabase.ts: a non-discarded widget row of the snippet's
 // presentation type(s) with first_view_date set and last_view_date null.
 export async function detectSnippetStatus(): Promise<BrandSnippetStatus[]> {
@@ -53,8 +59,12 @@ export async function detectSnippetStatus(): Promise<BrandSnippetStatus[]> {
       group by 1
     ),
     ca as (
-      select hbp.health_brand_id as bid, min(pa.updated_at) as ready_at
-      from product_assessments pa join health_brand_products hbp on hbp.id = pa.health_brand_product_id
+      select hbp.health_brand_id as bid, min(greatest(pa.updated_at, w.created_at)) as ready_at
+      from product_assessments pa
+        join health_brand_products hbp on hbp.id = pa.health_brand_product_id
+        join widgets w on w.health_brand_product_id = pa.health_brand_product_id
+          and w.presentation_type in ('gpt', 'analysis', 'gpt_s')
+          and w.discarded_at is null
       where pa.approved and hbp.discarded_at is null
       group by 1
     ),
