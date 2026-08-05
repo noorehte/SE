@@ -136,7 +136,7 @@ export interface Brand {
   WIDGET_TYPES: string[];
   WIDGET_STATUSES: Record<string, WidgetTypeStatus>;
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
-  ONBOARDING_CHANNEL: "app" | "external" | null; // "app" = onboarded via Brand Portal (and has portal access)
+  ONBOARDING_CHANNEL: "in_app" | "external" | null; // "in_app" = onboarded via Brand Portal (and has portal access)
   REVIEWS_DELIVERED: number;
   BADGE_READY_DATE: string | null;
   REVIEWS_READY_DATE: string | null;
@@ -261,9 +261,9 @@ export async function getBrands(): Promise<Brand[]> {
       from health_brands
       where discarded_at is not null
     `),
-    // "app" = onboarded/self-served through the Brand Portal; "external" =
+    // "in_app" = onboarded/self-served through the Brand Portal; "external" =
     // onboarded some other way (e.g. manually by an SE). Also doubles as
-    // brand-portal access, since only "app" brands have portal accounts.
+    // brand-portal access, since only "in_app" brands have portal accounts.
     queryGrafanaPostgres(`
       select id as health_brand_id, onboarding_channel
       from health_brands
@@ -452,11 +452,11 @@ export async function getBrands(): Promise<Brand[]> {
     }
   }
 
-  const onboardingChannelByBrand = new Map<number, "app" | "external">();
+  const onboardingChannelByBrand = new Map<number, "in_app" | "external">();
   for (const r of onboardingChannelRows as Record<string, unknown>[]) {
     const brandId = r.health_brand_id as number | null;
     const channel = r.onboarding_channel as string | null;
-    if (brandId == null || (channel !== "app" && channel !== "external")) continue;
+    if (brandId == null || (channel !== "in_app" && channel !== "external")) continue;
     onboardingChannelByBrand.set(brandId, channel);
   }
 

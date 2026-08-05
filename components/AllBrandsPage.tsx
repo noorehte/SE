@@ -29,8 +29,8 @@ function exportBrandsCsv(brands: Brand[]) {
     csvCell(b.ACCOUNT_MANAGER ?? ""),
     csvCell(b.OPS_OWNER ?? ""),
     csvCell(b.KIND ?? ""),
-    b.ONBOARDING_CHANNEL === "app" ? "Y" : "N",
-    b.ONBOARDING_CHANNEL === "app" ? "Y" : "N",
+    b.ONBOARDING_CHANNEL === "in_app" ? "Y" : "N",
+    b.ONBOARDING_CHANNEL === "in_app" ? "Y" : "N",
     csvCell(new Date(b.BRAND_CREATED_AT).toLocaleDateString()),
     String(b.DAYS_IN_STATUS),
     String(b.PRODUCTS_APPROVED_COUNT),
@@ -96,7 +96,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
     ACCOUNT_MANAGER: { kind: "select", field: "ACCOUNT_MANAGER", options: distinctStringOptions("ACCOUNT_MANAGER") },
     OPS_OWNER: { kind: "select", field: "OPS_OWNER", options: distinctStringOptions("OPS_OWNER") },
     KIND: { kind: "select", field: "KIND", options: distinctStringOptions("KIND") },
-    ONBOARDING_CHANNEL: { kind: "select", field: "ONBOARDING_CHANNEL", options: [{ value: "app", label: "Portal" }, { value: "external", label: "External" }] },
+    ONBOARDING_CHANNEL: { kind: "select", field: "ONBOARDING_CHANNEL", options: [{ value: "in_app", label: "Portal" }, { value: "external", label: "External" }] },
     DAYS_IN_STATUS: { kind: "min", field: "DAYS_IN_STATUS" },
     PRODUCTS_APPROVED_COUNT: { kind: "min", field: "PRODUCTS_APPROVED_COUNT" },
     REVIEWS_DELIVERED: { kind: "min", field: "REVIEWS_DELIVERED" },
@@ -269,8 +269,8 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
 
         {/* Table */}
         <div className="flex-1 overflow-auto p-8">
-          <div className="rounded-xl overflow-hidden" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <table className="w-full">
+          <div className="rounded-xl overflow-x-auto" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <table className="w-full" style={{ minWidth: "max-content" }}>
               <thead style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
                 <tr>
                   <Th label="Brand" field="BRAND_NAME" />
@@ -341,7 +341,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.OPS_OWNER ?? "—"}</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.KIND ?? "—"}</td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>
-                        {brand.ONBOARDING_CHANNEL === "app" ? "Portal" : brand.ONBOARDING_CHANNEL === "external" ? "External" : "—"}
+                        {brand.ONBOARDING_CHANNEL === "in_app" ? "Portal" : brand.ONBOARDING_CHANNEL === "external" ? "External" : "—"}
                       </td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>{fmtDate(brand.BRAND_CREATED_AT)}</td>
                       <td className="px-4 py-3 font-semibold" style={{ color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.4)", fontSize: "0.875rem" }}>{brand.DAYS_IN_STATUS}d</td>

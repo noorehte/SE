@@ -67,7 +67,7 @@ function exportBrandsCsv(brands: Brand[], columns: { id: PipelineStatus; label: 
     csvCell(b.SE_OWNER ?? ""),
     csvCell(b.ACCOUNT_MANAGER ?? ""),
     csvCell(b.OPS_OWNER ?? ""),
-    csvCell(b.ONBOARDING_CHANNEL === "app" ? "Portal" : b.ONBOARDING_CHANNEL === "external" ? "External" : ""),
+    csvCell(b.ONBOARDING_CHANNEL === "in_app" ? "Portal" : b.ONBOARDING_CHANNEL === "external" ? "External" : ""),
     String(b.REVIEWS_DELIVERED),
     String(b.DAYS_IN_STATUS),
     csvCell(b.KIND ?? ""),
@@ -570,7 +570,7 @@ function TableView({
     SE_OWNER: { kind: "text", field: "SE_OWNER" },
     ACCOUNT_MANAGER: { kind: "text", field: "ACCOUNT_MANAGER" },
     OPS_OWNER: { kind: "text", field: "OPS_OWNER" },
-    ONBOARDING_CHANNEL: { kind: "select", field: "ONBOARDING_CHANNEL", options: [{ value: "app", label: "Portal" }, { value: "external", label: "External" }] },
+    ONBOARDING_CHANNEL: { kind: "select", field: "ONBOARDING_CHANNEL", options: [{ value: "in_app", label: "Portal" }, { value: "external", label: "External" }] },
     REVIEWS_DELIVERED: { kind: "min", field: "REVIEWS_DELIVERED" },
     DAYS_IN_STATUS: { kind: "min", field: "DAYS_IN_STATUS" },
   };
@@ -707,7 +707,7 @@ function TableView({
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.SE_OWNER ?? "—"}</td>
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ACCOUNT_MANAGER ?? "—"}</td>
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.OPS_OWNER ?? "—"}</td>
-                <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ONBOARDING_CHANNEL === "app" ? "Portal" : brand.ONBOARDING_CHANNEL === "external" ? "External" : "—"}</td>
+                <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.ONBOARDING_CHANNEL === "in_app" ? "Portal" : brand.ONBOARDING_CHANNEL === "external" ? "External" : "—"}</td>
                 <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.REVIEWS_DELIVERED}</td>
                 <td className="px-4 py-3 font-semibold" style={{ color: isStuck ? "#e05c5c" : "rgba(255,255,255,0.4)", fontSize: "0.875rem" }}>{brand.DAYS_IN_STATUS}d</td>
                 <td className="px-4 py-3">
