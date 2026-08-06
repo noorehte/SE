@@ -37,6 +37,10 @@ export default async function Home() {
       METABASE_URL: process.env.METABASE_URL ? `${process.env.METABASE_URL.slice(0, 15)}...` : "MISSING",
       METABASE_API_KEY: process.env.METABASE_API_KEY ? "SET" : "MISSING",
       NOTION_TOKEN: process.env.NOTION_TOKEN ? "SET" : "MISSING",
+      GRAFANA_URL: process.env.GRAFANA_URL ? `${process.env.GRAFANA_URL.slice(0, 15)}...` : "MISSING",
+      GRAFANA_API_KEY: process.env.GRAFANA_API_KEY ? "SET" : "MISSING",
+      GRAFANA_WIDGETS_DATASOURCE_UID: process.env.GRAFANA_WIDGETS_DATASOURCE_UID ? "SET" : "MISSING",
+      HUBSPOT_API_KEY: process.env.HUBSPOT_API_KEY ? "SET" : "MISSING",
     };
     return (
       <div style={{ background: "#0d1b26", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>

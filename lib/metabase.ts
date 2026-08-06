@@ -23,6 +23,12 @@ async function metabaseQuery(tableId: number, fields?: number[], filters?: unkno
     cache: "no-store",
   });
 
+  if (!res.ok) {
+    // Metabase (or a proxy in front of it) can reject a request with a plain-
+    // text body (e.g. "Unauthenticated") instead of JSON — parsing that as
+    // JSON throws an opaque SyntaxError with no indication of the real cause.
+    throw new Error(`Metabase request failed (${res.status}): ${await res.text()}`);
+  }
   const data = await res.json();
   if (data.error) throw new Error(data.error);
 
@@ -67,6 +73,12 @@ export async function queryGrafanaPostgres(rawSql: string) {
     cache: "no-store",
   });
 
+  if (!res.ok) {
+    // Grafana (or a proxy in front of it) can reject a request with a plain-
+    // text body (e.g. "Unauthenticated") instead of JSON — parsing that as
+    // JSON throws an opaque SyntaxError with no indication of the real cause.
+    throw new Error(`Grafana request failed (${res.status}): ${await res.text()}`);
+  }
   const data = await res.json();
   const frame = data?.results?.A?.frames?.[0];
   if (!frame) throw new Error(`Grafana query failed: ${JSON.stringify(data)}`);
