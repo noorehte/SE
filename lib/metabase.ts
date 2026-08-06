@@ -136,7 +136,8 @@ export interface Brand {
   WIDGET_TYPES: string[];
   WIDGET_STATUSES: Record<string, WidgetTypeStatus>;
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
-  REACHED_OUT: boolean | null; // "Emailed?" from the email-reachouts sheet — null if not on the sheet, or bucket has no Emailed? column
+  ON_REACHOUT_SHEET: boolean; // true if the brand appears in any bucket on the email-reachouts sheet at all
+  REACHED_OUT: boolean | null; // "Emailed?" from the email-reachouts sheet — null if not on the sheet, or listed but not yet marked Y/N
   REACHED_OUT_SEND_LABEL: string | null; // that bucket's send date/label, e.g. "Send 7/31" or "Send in Aug"
   ONBOARDING_CHANNEL: "in_app" | "external" | null; // "in_app" = onboarded via Brand Portal (and has portal access)
   REVIEWS_DELIVERED: number;
@@ -603,6 +604,7 @@ export async function getBrands(): Promise<Brand[]> {
       WIDGET_TYPES: Object.keys(widgetStatusByBrand.get(brandId) ?? {}),
       WIDGET_STATUSES: widgetStatusByBrand.get(brandId) ?? {},
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
+      ON_REACHOUT_SHEET: false,
       REACHED_OUT: null as boolean | null,
       REACHED_OUT_SEND_LABEL: null as string | null,
       ONBOARDING_CHANNEL: onboardingChannelByBrand.get(brandId) ?? null,

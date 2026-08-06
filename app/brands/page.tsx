@@ -15,6 +15,7 @@ export default async function Page() {
     return {
       ...b,
       CAI_IMPLEMENTATION_READY: caiLookup.get(normalize(b.BRAND_NAME)) ?? null,
+      ON_REACHOUT_SHEET: reachout != null,
       REACHED_OUT: reachout?.emailed ?? null,
       REACHED_OUT_SEND_LABEL: reachout?.sendLabel ?? null,
     };

@@ -20,7 +20,7 @@ function exportBrandsCsv(brands: Brand[]) {
     "Days in Status", "Products Approved", "Products Total", "Reviews Delivered",
     "Badge Ready Date", "Reviews Ready Date", "CAI Ready Date",
     "Badge Imp (Y/N)", "Reviews Imp (Y/N)", "CAI Imp (Y/N)",
-    "Reached Out (Y/N)", "Reached Out Send Date",
+    "On Reachout Sheet (Y/N)", "Reached Out (Y/N)", "Reached Out Send Date",
     "Churned",
   ];
   const rows = brands.map((b) => [
@@ -43,6 +43,7 @@ function exportBrandsCsv(brands: Brand[]) {
     b.BADGE_IMPLEMENTED ? "Y" : "N",
     b.REVIEWS_IMPLEMENTED ? "Y" : "N",
     b.CAI_IMPLEMENTED ? "Y" : "N",
+    b.ON_REACHOUT_SHEET ? "Y" : "N",
     b.REACHED_OUT == null ? "" : b.REACHED_OUT ? "Y" : "N",
     csvCell(b.REACHED_OUT_SEND_LABEL ?? ""),
     csvCell(b.PIPELINE_STATUS === "churned" ? new Date(b.STATUS_ENTERED_AT).toLocaleDateString() : ""),
@@ -106,7 +107,15 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
     BADGE_IMPLEMENTED: { kind: "select", field: "BADGE_IMPLEMENTED", options: [{ value: "true", label: "Y" }, { value: "false", label: "N" }] },
     REVIEWS_IMPLEMENTED: { kind: "select", field: "REVIEWS_IMPLEMENTED", options: [{ value: "true", label: "Y" }, { value: "false", label: "N" }] },
     CAI_IMPLEMENTED: { kind: "select", field: "CAI_IMPLEMENTED", options: [{ value: "true", label: "Y" }, { value: "false", label: "N" }] },
-    REACHED_OUT: { kind: "select", field: "REACHED_OUT", options: [{ value: "true", label: "Y" }, { value: "false", label: "N" }] },
+    REACHED_OUT: {
+      kind: "select",
+      field: "REACHED_OUT",
+      options: [
+        { value: "true", label: "Y" },
+        { value: "false", label: "N" },
+        { value: "not_listed", label: "Not on sheet" },
+      ],
+    },
   };
 
   function matchesColumnFilters(brand: Brand): boolean {
@@ -124,6 +133,12 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
         // "maha" from the dropdown catches both.
         if (key === "SE_OWNER") {
           return typeof raw === "string" && raw.toLowerCase().startsWith(value.toLowerCase());
+        }
+        // "not_listed" isn't a value of REACHED_OUT itself (that's boolean|null,
+        // and null also covers "listed but blank") — it means the brand never
+        // appeared on the reachouts sheet at all, tracked separately.
+        if (key === "REACHED_OUT" && value === "not_listed") {
+          return !brand.ON_REACHOUT_SHEET;
         }
         return String(raw) === value;
       }
@@ -360,7 +375,11 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                       <td className="px-4 py-3" style={{ color: brand.REVIEWS_IMPLEMENTED ? "#4caf82" : "rgba(255,255,255,0.3)", fontSize: "0.875rem" }}>{brand.REVIEWS_IMPLEMENTED ? "Y" : "N"}</td>
                       <td className="px-4 py-3" style={{ color: brand.CAI_IMPLEMENTED ? "#4caf82" : "rgba(255,255,255,0.3)", fontSize: "0.875rem" }}>{brand.CAI_IMPLEMENTED ? "Y" : "N"}</td>
                       <td className="px-4 py-3" style={{ color: brand.REACHED_OUT ? "#4caf82" : brand.REACHED_OUT === false ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.2)", fontSize: "0.875rem" }}>
-                        {brand.REACHED_OUT == null ? "—" : `${brand.REACHED_OUT ? "Y" : "N"}${brand.REACHED_OUT_SEND_LABEL ? ` (${brand.REACHED_OUT_SEND_LABEL})` : ""}`}
+                        {!brand.ON_REACHOUT_SHEET
+                          ? "Not on sheet"
+                          : brand.REACHED_OUT == null
+                            ? "—"
+                            : `${brand.REACHED_OUT ? "Y" : "N"}${brand.REACHED_OUT_SEND_LABEL ? ` (${brand.REACHED_OUT_SEND_LABEL})` : ""}`}
                       </td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>
                         {brand.PIPELINE_STATUS === "churned" ? new Date(brand.STATUS_ENTERED_AT).toLocaleDateString() : "—"}
