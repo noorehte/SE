@@ -23,12 +23,16 @@ export const SE_EMAILS: Record<string, string> = {
   "noor@thefrontrowhealth.com": "noor",
   "naumaan@thefrontrowhealth.com": "naumaan",
   "maha@thefrontrowhealth.com": "maha",
+  "lane@thefrontrowhealth.com": "lane",
 };
 
 export const OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/gmail.compose",
   "https://www.googleapis.com/auth/userinfo.email",
+  // Lets a connected account edit the email-reachouts sheet (lib/reachouts-sheet.ts)
+  // from the Table view's Reached Out column, instead of read-only CSV export.
+  "https://www.googleapis.com/auth/spreadsheets",
 ];
 
 interface StoredTokens {

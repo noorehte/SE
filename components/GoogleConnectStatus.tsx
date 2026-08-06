@@ -7,6 +7,7 @@ const SE_LABELS: Record<string, string> = {
   noor: "Noor",
   naumaan: "Naumaan",
   maha: "Maha",
+  lane: "Lane",
 };
 
 // Small status pill showing which SEs have connected their Google account for

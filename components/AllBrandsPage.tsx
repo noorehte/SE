@@ -113,6 +113,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
       options: [
         { value: "true", label: "Y" },
         { value: "false", label: "N" },
+        { value: "to_be_sent", label: "To be sent" },
         { value: "not_listed", label: "Not on sheet" },
       ],
     },
@@ -139,6 +140,9 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
         // appeared on the reachouts sheet at all, tracked separately.
         if (key === "REACHED_OUT" && value === "not_listed") {
           return !brand.ON_REACHOUT_SHEET;
+        }
+        if (key === "REACHED_OUT" && value === "to_be_sent") {
+          return brand.ON_REACHOUT_SHEET && brand.REACHED_OUT == null;
         }
         return String(raw) === value;
       }
@@ -185,6 +189,31 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
         );
       }
       alert(`Couldn't save status change: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function setReachedOut(brandName: string, emailed: boolean) {
+    const prev = brands.find((b) => b.BRAND_NAME === brandName)?.REACHED_OUT ?? null;
+    setBrands((prevBrands) =>
+      prevBrands.map((b) => (b.BRAND_NAME === brandName ? { ...b, REACHED_OUT: emailed } : b))
+    );
+    try {
+      const res = await fetch("/api/reachouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandName, emailed }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Save failed (${res.status})`);
+      }
+    } catch (e) {
+      // Roll back — the optimistic update above was never actually written
+      // to the sheet, so the table shouldn't keep showing it as changed.
+      setBrands((prevBrands) =>
+        prevBrands.map((b) => (b.BRAND_NAME === brandName ? { ...b, REACHED_OUT: prev } : b))
+      );
+      alert(`Couldn't save to the reachouts sheet: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -374,12 +403,25 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                       <td className="px-4 py-3" style={{ color: brand.BADGE_IMPLEMENTED ? "#4caf82" : "rgba(255,255,255,0.3)", fontSize: "0.875rem" }}>{brand.BADGE_IMPLEMENTED ? "Y" : "N"}</td>
                       <td className="px-4 py-3" style={{ color: brand.REVIEWS_IMPLEMENTED ? "#4caf82" : "rgba(255,255,255,0.3)", fontSize: "0.875rem" }}>{brand.REVIEWS_IMPLEMENTED ? "Y" : "N"}</td>
                       <td className="px-4 py-3" style={{ color: brand.CAI_IMPLEMENTED ? "#4caf82" : "rgba(255,255,255,0.3)", fontSize: "0.875rem" }}>{brand.CAI_IMPLEMENTED ? "Y" : "N"}</td>
-                      <td className="px-4 py-3" style={{ color: brand.REACHED_OUT ? "#4caf82" : brand.REACHED_OUT === false ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.2)", fontSize: "0.875rem" }}>
-                        {!brand.ON_REACHOUT_SHEET
-                          ? "Not on sheet"
-                          : brand.REACHED_OUT == null
-                            ? "—"
-                            : `${brand.REACHED_OUT ? "Y" : "N"}${brand.REACHED_OUT_SEND_LABEL ? ` (${brand.REACHED_OUT_SEND_LABEL})` : ""}`}
+                      <td className="px-4 py-3">
+                        {!brand.ON_REACHOUT_SHEET ? (
+                          <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "0.875rem" }}>Not on sheet</span>
+                        ) : (
+                          <select
+                            value={brand.REACHED_OUT == null ? "unset" : brand.REACHED_OUT ? "true" : "false"}
+                            onChange={(e) => setReachedOut(brand.BRAND_NAME, e.target.value === "true")}
+                            className="rounded-full border-0 cursor-pointer px-2 py-0.5"
+                            style={{
+                              background: (brand.REACHED_OUT ? "#4caf82" : brand.REACHED_OUT === false ? "rgba(255,255,255,0.3)" : "#e9a84c") + "22",
+                              color: brand.REACHED_OUT ? "#4caf82" : brand.REACHED_OUT === false ? "rgba(255,255,255,0.6)" : "#e9a84c",
+                              fontSize: "0.8rem",
+                            }}
+                          >
+                            <option value="unset" disabled>{`To be sent${brand.REACHED_OUT_SEND_LABEL ? ` (${brand.REACHED_OUT_SEND_LABEL})` : ""}`}</option>
+                            <option value="true">{`Y${brand.REACHED_OUT_SEND_LABEL ? ` (${brand.REACHED_OUT_SEND_LABEL})` : ""}`}</option>
+                            <option value="false">{`N${brand.REACHED_OUT_SEND_LABEL ? ` (${brand.REACHED_OUT_SEND_LABEL})` : ""}`}</option>
+                          </select>
+                        )}
                       </td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>
                         {brand.PIPELINE_STATUS === "churned" ? new Date(brand.STATUS_ENTERED_AT).toLocaleDateString() : "—"}
