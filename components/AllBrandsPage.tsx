@@ -12,6 +12,16 @@ function csvCell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
+// Mirrors the 4 states the in-app "Reached Out" filter dropdown offers
+// (see FILTER_CONFIG.REACHED_OUT below) — writing plain Y/N/blank here would
+// collapse "to be sent" and "not on sheet" into the same blank cell, so
+// Excel's own AutoFilter dropdown on this column couldn't tell them apart.
+function reachedOutLabel(b: Brand): string {
+  if (!b.ON_REACHOUT_SHEET) return "Not on sheet";
+  if (b.REACHED_OUT == null) return "To be sent";
+  return b.REACHED_OUT ? "Y" : "N";
+}
+
 function exportBrandsCsv(brands: Brand[]) {
   const statusLabel = (status: PipelineStatus) => ALL_COLUMNS.find((c) => c.id === status)?.label ?? status;
   const header = [
@@ -44,7 +54,7 @@ function exportBrandsCsv(brands: Brand[]) {
     b.REVIEWS_IMPLEMENTED ? "Y" : "N",
     b.CAI_IMPLEMENTED ? "Y" : "N",
     b.ON_REACHOUT_SHEET ? "Y" : "N",
-    b.REACHED_OUT == null ? "" : b.REACHED_OUT ? "Y" : "N",
+    csvCell(reachedOutLabel(b)),
     csvCell(b.REACHED_OUT_SEND_LABEL ?? ""),
     csvCell(b.PIPELINE_STATUS === "churned" ? new Date(b.STATUS_ENTERED_AT).toLocaleDateString() : ""),
   ]);
@@ -67,21 +77,37 @@ type ColumnFilterConfig =
   | { kind: "min"; field: keyof Brand }
   | { kind: "select"; field: keyof Brand; options: { value: string; label: string }[] };
 
+// Named combined-status presets that don't map to a single column — each is a
+// predicate over the whole brand rather than one field, so they live outside
+// FILTER_CONFIG/columnFilters and get their own toolbar dropdown.
+type QuickFilter = { value: string; label: string; test: (b: Brand) => boolean };
+const QUICK_FILTERS: QuickFilter[] = [
+  {
+    value: "reviews_ready_not_implemented_not_reached_out",
+    label: "Reviews ready, not implemented, not reached out",
+    test: (b) => b.REVIEWS_READY_DATE != null && !b.REVIEWS_IMPLEMENTED && b.REACHED_OUT !== true,
+  },
+];
+
 export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[] }) {
   const [brands, setBrands] = useState(initialBrands);
   const [search, setSearch] = useState("");
   const [seFilter, setSeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [widgetFilter, setWidgetFilter] = useState("all");
+  const [quickFilter, setQuickFilter] = useState("all");
   const [sortKey, setSortKey] = useState<keyof Brand>("BRAND_NAME");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+
+  const activeQuickFilter = QUICK_FILTERS.find((f) => f.value === quickFilter);
 
   const filtered = brands
     .filter((b) => b.BRAND_NAME.toLowerCase().includes(search.toLowerCase()))
     .filter((b) => seFilter === "all" || b.SE_OWNER === seFilter)
     .filter((b) => statusFilter === "all" || b.PIPELINE_STATUS === statusFilter)
-    .filter((b) => widgetFilter === "all" || b.WIDGET_TYPES.includes(widgetFilter));
+    .filter((b) => widgetFilter === "all" || b.WIDGET_TYPES.includes(widgetFilter))
+    .filter((b) => !activeQuickFilter || activeQuickFilter.test(b));
 
   // Distinct string values actually present in the data — Account Manager,
   // Ops, and Segment aren't drawn from a fixed roster the way SE nominally is.
@@ -312,6 +338,11 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
             {Object.entries(WIDGET_TYPE_LABELS).map(([key, label]) => (
               <option key={key} value={key}>{label}</option>
             ))}
+          </select>
+          <select value={quickFilter} onChange={(e) => setQuickFilter(e.target.value)}
+            className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(255,255,255,0.07)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)" }}>
+            <option value="all">Quick filters</option>
+            {QUICK_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
           </select>
         </div>
 
