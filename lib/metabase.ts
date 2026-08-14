@@ -1,5 +1,5 @@
 import { getAllOverrides, OverrideEntry } from "@/lib/overrides";
-import { getHubSpotOwnerChecksByCompanyId } from "@/lib/hubspot";
+import { getHubSpotOwnerChecksByCompanyId, normalizeOwnerName } from "@/lib/hubspot";
 
 async function metabaseQuery(tableId: number, fields?: number[], filters?: unknown[], limit?: number) {
   // Read at request time — module-level access gets baked in as undefined for Sensitive vars
@@ -590,9 +590,13 @@ export async function getBrands(): Promise<Brand[]> {
       // Lowest-priority fallback on all three: HubSpot's own value, read
       // straight from the CRM, only kicks in when Metabase has nothing —
       // Notion overrides and the onboarding portal still always win.
-      SE_OWNER: f.SE_OWNER ?? onboarding?.SE_OWNER ?? stg.SE_OWNER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.seOwner ?? null,
-      OPS_OWNER: f.OPS_OWNER ?? onboarding?.OPS_OWNER ?? stg.OPS_OWNER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.opsOwner ?? null,
-      ACCOUNT_MANAGER: f.ACCOUNT_MANAGER ?? onboarding?.ACCOUNT_MANAGER ?? stg.ACCOUNT_MANAGER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.accountManager ?? null,
+      // Normalized because these sources disagree on shape — Notion/Metabase
+      // tend to hold our internal shortname ("maha") while HubSpot's Owners
+      // API returns "firstName lastName" ("Maha Awaisi") — and filtering by
+      // shortname needs one consistent form to match against.
+      SE_OWNER: normalizeOwnerName(f.SE_OWNER ?? onboarding?.SE_OWNER ?? stg.SE_OWNER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.seOwner ?? null),
+      OPS_OWNER: normalizeOwnerName(f.OPS_OWNER ?? onboarding?.OPS_OWNER ?? stg.OPS_OWNER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.opsOwner ?? null),
+      ACCOUNT_MANAGER: normalizeOwnerName(f.ACCOUNT_MANAGER ?? onboarding?.ACCOUNT_MANAGER ?? stg.ACCOUNT_MANAGER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.accountManager ?? null),
       BD_REP: f.BD_REP ?? onboarding?.BD_REP ?? null,
       BRAND_CREATED_AT: onboarding?.BRAND_CREATED_AT ?? stg.CREATED_AT,
       ANY_ADMIN_LAST_SIGNED_IN_AT: onboarding?.ANY_ADMIN_LAST_SIGNED_IN_AT ?? null,

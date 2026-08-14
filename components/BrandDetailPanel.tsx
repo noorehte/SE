@@ -8,9 +8,9 @@ import { X, ExternalLink, CalendarPlus, Copy, Check, Pencil } from "lucide-react
 
 const OWNER_INITIALS: Record<string, string> = {
   maha: "MH", noor: "NR", naumaan: "NM",
-  mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK",
+  mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK", andres: "AB",
 };
-const OWNER_OPTIONS = ["maha", "noor", "naumaan", "mohammad", "kean", "jean", "zeke"];
+const OWNER_OPTIONS = ["maha", "noor", "naumaan", "mohammad", "kean", "jean", "zeke", "andres"];
 // Only SEs with a Google-connected calendar can have a call scheduled on their
 // behalf — this is deliberately narrower than OWNER_OPTIONS above.
 const SCHEDULABLE_SES = Object.keys(SE_INFO);

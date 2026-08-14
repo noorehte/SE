@@ -50,7 +50,7 @@ export const ALL_COLUMNS: { id: PipelineStatus; label: string; accent: string }[
 // no way to filter it back out.
 export const SIGNED_ON_COLUMNS = ALL_COLUMNS.filter((c) => c.id !== "churned");
 
-const SE_OWNERS = ["maha", "noor", "naumaan"];
+const SE_OWNERS = ["maha", "noor", "naumaan", "andres"];
 
 function csvCell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;

@@ -11,7 +11,27 @@ const OWNER_TO_HUBSPOT_ID: Record<string, string> = {
   kean:     "161225162",
   jean:     "162264876",
   zeke:     "2060158945",
+  andres:   "166953583",
 };
+
+// Reverse of OWNER_TO_HUBSPOT_ID — HubSpot user ID -> our internal shortname.
+const HUBSPOT_ID_TO_OWNER: Record<string, string> = Object.fromEntries(
+  Object.entries(OWNER_TO_HUBSPOT_ID).map(([name, id]) => [id, name])
+);
+
+// Normalizes any of the shapes SE_OWNER (and other owner fields) can arrive
+// in — a shortname ("maha"), a full name from HubSpot's Owners API
+// ("Maha Awaisi"), or mismatched case — down to the canonical shortname key
+// used everywhere else (OWNER_OPTIONS, SE_INFO, filter dropdowns). Falls back
+// to the original string unchanged when it's not a recognized owner (e.g. an
+// account exec picked up via HubSpot's native Company owner fallback), so
+// non-SE names still display as-is instead of disappearing.
+export function normalizeOwnerName(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const firstWord = raw.trim().split(/\s+/)[0]?.toLowerCase();
+  if (firstWord && firstWord in OWNER_TO_HUBSPOT_ID) return firstWord;
+  return raw;
+}
 
 // Old/deactivated HubSpot owner IDs -> the current owner ID they were
 // replaced by. HubSpot's Owners endpoint returns no name for a deactivated
@@ -183,7 +203,16 @@ export async function getHubSpotOwnerChecksByCompanyId(companyIds: number[]): Pr
       }
       const data: { results?: { id: string; firstName?: string; lastName?: string; email?: string }[]; paging?: { next?: { after?: string } } } = await res.json();
       for (const o of data.results ?? []) {
-        const name = [o.firstName, o.lastName].filter(Boolean).join(" ").trim() || o.email;
+        // Prefer our own shortname over HubSpot's firstName/lastName: HubSpot's
+        // firstName field isn't reliably just a first name (e.g. one owner's
+        // HubSpot record has firstName "Shealtiel Kean", lastName "Nejudne" —
+        // display name "Shealtiel Kean Nejudne" — even though everywhere else
+        // in this app that person is "kean"). Matching by ID up front, before
+        // any name ever gets built, avoids depending on HubSpot's name shape
+        // matching ours.
+        const shortname = HUBSPOT_ID_TO_OWNER[o.id];
+        const fullName = [o.firstName, o.lastName].filter(Boolean).join(" ").trim();
+        const name = shortname ?? (fullName || o.email);
         if (name) ownerNameById.set(Number(o.id), name);
       }
       ownerAfter = data.paging?.next?.after;

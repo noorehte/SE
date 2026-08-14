@@ -12,6 +12,7 @@ export const SE_INFO: Record<string, SEInfo> = {
   noor: { displayName: "Noor", meetingLink: "https://meetings-na2.hubspot.com/nehtesham/noor-meeting-link" },
   naumaan: { displayName: "Naumaan", meetingLink: "https://meetings-na2.hubspot.com/naumaan" },
   maha: { displayName: "Maha", meetingLink: "https://meetings.hubspot.com/maha-awaisi" },
+  andres: { displayName: "Andres", meetingLink: "https://meetings-na2.hubspot.com/andres-baeza?uuid=bec93e7e-e97d-4f71-91f9-35e2d14d15cf" },
 };
 
 export function getSEInfo(seOwner: string): SEInfo {

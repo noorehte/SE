@@ -6,7 +6,7 @@ import { ALL_COLUMNS } from "./Dashboard";
 import Sidebar from "./Sidebar";
 import { Download, Search } from "lucide-react";
 
-const SE_OWNERS = ["maha", "noor", "naumaan"];
+const SE_OWNERS = ["maha", "noor", "naumaan", "andres"];
 
 function csvCell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
@@ -155,12 +155,6 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
         return String(raw ?? "").toLowerCase().includes(value.toLowerCase());
       }
       if (config.kind === "select") {
-        // SE_OWNER data mixes shortnames ("maha") and HubSpot full names
-        // ("Maha Awaisi") for the same person — match either form so picking
-        // "maha" from the dropdown catches both.
-        if (key === "SE_OWNER") {
-          return typeof raw === "string" && raw.toLowerCase().startsWith(value.toLowerCase());
-        }
         // "not_listed" isn't a value of REACHED_OUT itself (that's boolean|null,
         // and null also covers "listed but blank") — it means the brand never
         // appeared on the reachouts sheet at all, tracked separately.
