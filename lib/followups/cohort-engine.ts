@@ -84,7 +84,10 @@ export async function runCohortFollowups(opts: CohortRunOptions = {}): Promise<{
       if (!dryRun) await setState(state);
     };
 
-    if (state.completed) {
+    // Only a COHORT-completed brand (one this engine actually launched) is
+    // skipped. Legacy "completed" state from the retired engine (no firstBumpAt)
+    // must NOT block a future launch — it gets overwritten on the Day-10 fire.
+    if (state.firstBumpAt && state.completed) {
       done({ ...base, action: "none", reason: "sequence already completed", pylonIssueId: state.pylonIssueId });
       continue;
     }
@@ -95,8 +98,10 @@ export async function runCohortFollowups(opts: CohortRunOptions = {}): Promise<{
       continue;
     }
 
-    // Brand replied in the thread → stop the cadence entirely.
-    if (state.pylonIssueId && !state.repliedAt) {
+    // Brand replied in the thread → stop the cadence entirely. Only checked for
+    // brands this engine launched (firstBumpAt) so we never read a legacy
+    // internal-note issue and mis-flag it as a customer reply.
+    if (state.firstBumpAt && state.pylonIssueId && !state.repliedAt) {
       const replyAt = await safeReplyAt(state.pylonIssueId);
       if (replyAt) {
         state.repliedAt = replyAt;
