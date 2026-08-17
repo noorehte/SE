@@ -63,8 +63,12 @@ export function buildTrackerRow(
   brand: Brand | undefined,
   state: FollowupState | null
 ): TrackerRow {
-  const highestMark = state?.touchesSent?.length ? Math.max(...state.touchesSent) : 0;
   const firstBumpAt = state?.firstBumpAt ?? null;
+  // Only count cadence marks once the COHORT engine has launched this brand
+  // (firstBumpAt set). Leftover touchesSent from the retired admission-window
+  // engine (internal notes, no firstBumpAt) must NOT read as Day 10/20/30 — the
+  // brand stays Queued until its month is launched here.
+  const highestMark = firstBumpAt && state?.touchesSent?.length ? Math.max(...state.touchesSent) : 0;
   const base = {
     id: cohort.id,
     name: brand?.BRAND_NAME ?? cohort.name,
