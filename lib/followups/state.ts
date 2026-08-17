@@ -26,6 +26,10 @@ export interface FollowupState {
   touchesSent: number[]; // marks already fired/superseded, e.g. [10, 20]
   completed: boolean; // true once all active snippets went live, or the day-40 touch fired
   lastRunAt: string;
+  // Cohort follow-up additions (see lib/followups/cohort.ts). Optional so the
+  // legacy admission-window flow keeps working unchanged.
+  firstBumpAt?: string; // ISO — when the Day-10 bump fired; the cohort cadence anchor
+  repliedAt?: string;   // ISO — brand replied in the Pylon thread; stops the cadence
 }
 
 // Mirror lib/brand-signup/token-store.ts: use Vercel KV when configured,

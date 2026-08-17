@@ -5,8 +5,8 @@
       "schedule": "0 14 * * *"
     },
     {
-      "path": "/api/followups",
-      "schedule": "0 13 * * *"
+      "path": "/api/followups/cohort",
+      "schedule": "0 17 * * *"
     }
   ]
 }
