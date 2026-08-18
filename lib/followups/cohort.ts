@@ -1,10 +1,13 @@
-// AUTO-GENERATED cohort for the reviews follow-up sequence (May/June/July 2026,
-// reviews sent but not live). Frozen allowlist — this is the ONLY set the cohort
-// follow-up engine acts on. Regenerate deliberately; do not add brands casually.
+// AUTO-GENERATED cohort for the reviews follow-up sequence (May/June/July 2026).
+// Frozen allowlist — the ONLY set the cohort follow-up engine acts on.
+// Membership rule: the month's reviews-sent signal is set AND at least one
+// product has >= 2 notes with share_with_brands = true, AND the brand is a
+// live partner (is_partner AND discarded_at IS NULL) at build time. Churn is
+// ALSO re-checked at run time as a stop condition. Regenerate deliberately.
 //   reviewsSentDate = earliest of product all_reviews_sent_at and brand
 //                     reviews_ready_email_sent_at (portal reviews-ready email).
-//   caiReady        = brand also had an approved CAI product assessment with no
-//                     live CAI widget at cohort-build time (drives the +CAI bump).
+//   caiReady        = approved CAI product assessment with no live CAI widget
+//                     at build time (drives the +CAI bump).
 export type CohortMonth = "may" | "june" | "july";
 
 export interface CohortBrand {
@@ -80,13 +83,6 @@ export const FOLLOWUP_COHORT: CohortBrand[] = [
     "caiReady": true
   },
   {
-    "id": 1357,
-    "name": "P.S. Good Times",
-    "month": "may",
-    "reviewsSentDate": "2026-05-22",
-    "caiReady": false
-  },
-  {
     "id": 1182,
     "name": "Dajesa",
     "month": "may",
@@ -108,13 +104,6 @@ export const FOLLOWUP_COHORT: CohortBrand[] = [
     "caiReady": true
   },
   {
-    "id": 302,
-    "name": "Good Idea",
-    "month": "may",
-    "reviewsSentDate": "2026-05-27",
-    "caiReady": false
-  },
-  {
     "id": 1090,
     "name": "Folly Nutrition",
     "month": "may",
@@ -131,13 +120,6 @@ export const FOLLOWUP_COHORT: CohortBrand[] = [
   {
     "id": 1361,
     "name": "Advanced Bionutritionals",
-    "month": "may",
-    "reviewsSentDate": "2026-05-29",
-    "caiReady": false
-  },
-  {
-    "id": 1318,
-    "name": "Evvy",
     "month": "may",
     "reviewsSentDate": "2026-05-29",
     "caiReady": false
@@ -283,13 +265,6 @@ export const FOLLOWUP_COHORT: CohortBrand[] = [
     "caiReady": true
   },
   {
-    "id": 1165,
-    "name": "Newton Baby",
-    "month": "june",
-    "reviewsSentDate": "2026-06-11",
-    "caiReady": false
-  },
-  {
     "id": 1368,
     "name": "Trelli",
     "month": "june",
@@ -339,13 +314,6 @@ export const FOLLOWUP_COHORT: CohortBrand[] = [
     "caiReady": false
   },
   {
-    "id": 1398,
-    "name": "Bronzebody",
-    "month": "june",
-    "reviewsSentDate": "2026-06-23",
-    "caiReady": false
-  },
-  {
     "id": 1336,
     "name": "One Sol",
     "month": "june",
@@ -367,29 +335,8 @@ export const FOLLOWUP_COHORT: CohortBrand[] = [
     "caiReady": false
   },
   {
-    "id": 1536,
-    "name": "Awesome Aminos",
-    "month": "june",
-    "reviewsSentDate": "2026-06-27",
-    "caiReady": false
-  },
-  {
     "id": 1418,
     "name": "Cata-kor",
-    "month": "june",
-    "reviewsSentDate": "2026-06-27",
-    "caiReady": true
-  },
-  {
-    "id": 1443,
-    "name": "Clare",
-    "month": "june",
-    "reviewsSentDate": "2026-06-27",
-    "caiReady": false
-  },
-  {
-    "id": 1435,
-    "name": "Dear Apothecary",
     "month": "june",
     "reviewsSentDate": "2026-06-27",
     "caiReady": true
@@ -409,20 +356,6 @@ export const FOLLOWUP_COHORT: CohortBrand[] = [
     "caiReady": true
   },
   {
-    "id": 1417,
-    "name": "Gum of Gods",
-    "month": "june",
-    "reviewsSentDate": "2026-06-27",
-    "caiReady": false
-  },
-  {
-    "id": 1464,
-    "name": "In Season",
-    "month": "june",
-    "reviewsSentDate": "2026-06-27",
-    "caiReady": true
-  },
-  {
     "id": 1511,
     "name": "Meche Group Inc",
     "month": "june",
@@ -430,43 +363,8 @@ export const FOLLOWUP_COHORT: CohortBrand[] = [
     "caiReady": false
   },
   {
-    "id": 1432,
-    "name": "Milky",
-    "month": "june",
-    "reviewsSentDate": "2026-06-27",
-    "caiReady": false
-  },
-  {
-    "id": 1495,
-    "name": "PCOS Pal",
-    "month": "june",
-    "reviewsSentDate": "2026-06-27",
-    "caiReady": false
-  },
-  {
-    "id": 1311,
-    "name": "Solius",
-    "month": "june",
-    "reviewsSentDate": "2026-06-27",
-    "caiReady": false
-  },
-  {
     "id": 1442,
     "name": "The Better Fly",
-    "month": "june",
-    "reviewsSentDate": "2026-06-27",
-    "caiReady": true
-  },
-  {
-    "id": 1440,
-    "name": "Toniiq",
-    "month": "june",
-    "reviewsSentDate": "2026-06-27",
-    "caiReady": true
-  },
-  {
-    "id": 1480,
-    "name": "We Heart Nutrition",
     "month": "june",
     "reviewsSentDate": "2026-06-27",
     "caiReady": true
@@ -483,13 +381,6 @@ export const FOLLOWUP_COHORT: CohortBrand[] = [
     "name": "NBPure",
     "month": "june",
     "reviewsSentDate": "2026-06-29",
-    "caiReady": false
-  },
-  {
-    "id": 1453,
-    "name": "Jupiter Neurosciences",
-    "month": "june",
-    "reviewsSentDate": "2026-06-30",
     "caiReady": false
   },
   {
