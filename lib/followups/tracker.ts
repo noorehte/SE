@@ -90,10 +90,12 @@ export function buildTrackerRow(
 
 // Build every cohort row for the tracker tab. `brands` is the full getBrands()
 // result; we index it by BRAND_ID and read each brand's persisted follow-up
-// state. Read-only: no writes, no Pylon calls.
+// state. Read-only: no writes, no Pylon calls. Churned brands are dropped —
+// they're a hard stop in the engine and shouldn't appear on the tab.
 export async function buildTrackerRows(brands: Brand[]): Promise<TrackerRow[]> {
   const byId = new Map(brands.map((b) => [b.BRAND_ID, b]));
+  const active = FOLLOWUP_COHORT.filter((c) => byId.get(c.id)?.PIPELINE_STATUS !== "churned");
   return Promise.all(
-    FOLLOWUP_COHORT.map(async (c) => buildTrackerRow(c, byId.get(c.id), await getState(c.id)))
+    active.map(async (c) => buildTrackerRow(c, byId.get(c.id), await getState(c.id)))
   );
 }

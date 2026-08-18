@@ -4,11 +4,15 @@ import { queryGrafanaPostgres } from "@/lib/metabase";
 // cohort follow-ups care about. Read straight from the app's Postgres via
 // Grafana (same source/rules as detect.ts), so it stays accurate and doesn't
 // depend on the Metabase pipeline.
-//   Reviews  ready = a shared review exists; live = qual widget viewed & active
+//   Reviews  ready = at least one PRODUCT has >= 2 notes with share_with_brands
+//                    = true (two shared reviews on the same product); live =
+//                    qual widget viewed & active
 //   Badge    ready = a product crossed the provider threshold at >=100 stores;
 //                    live = quant/sticker widget viewed & active
 //   CAI      ready = an approved product_assessment exists (caiApproved);
 //                    live = gpt/analysis/gpt_s widget viewed & active
+//   active   = the brand is still a live partner (is_partner AND discarded_at
+//              IS NULL). Churned/non-partner brands are a hard stop.
 export interface WidgetStatus {
   reviewsReady: boolean;
   reviewsLive: boolean;
@@ -16,6 +20,7 @@ export interface WidgetStatus {
   badgeLive: boolean;
   caiApproved: boolean;
   caiLive: boolean;
+  active: boolean;
 }
 
 export async function detectCohortWidgetStatus(
@@ -32,9 +37,12 @@ export async function detectCohortWidgetStatus(
       group by 1
     ),
     reviews_ready as (
-      select hbp.health_brand_id as bid from notes n
-      join health_brand_products hbp on hbp.id = n.health_brand_product_id
-      where n.share_with_brands and hbp.discarded_at is null group by 1
+      select bid from (
+        select hbp.health_brand_id as bid, hbp.id as pid, count(*) as c
+        from notes n join health_brand_products hbp on hbp.id = n.health_brand_product_id
+        where n.share_with_brands and hbp.discarded_at is null
+        group by 1, hbp.id
+      ) t where c >= 2 group by bid
     ),
     cai_appr as (
       select hbp.health_brand_id as bid, bool_or(pa.approved) as ok from product_assessments pa
@@ -54,7 +62,8 @@ export async function detectCohortWidgetStatus(
       coalesce(ca.ok,false) as cai_approved,
       coalesce(l.reviews_live,false) as reviews_live,
       coalesce(l.badge_live,false)   as badge_live,
-      coalesce(l.cai_live,false)     as cai_live
+      coalesce(l.cai_live,false)     as cai_live,
+      (hb.is_partner and hb.discarded_at is null) as active
     from health_brands hb
     left join reviews_ready rr on rr.bid = hb.id
     left join badge_ready   br on br.bid = hb.id
@@ -71,6 +80,7 @@ export async function detectCohortWidgetStatus(
       badgeLive: !!r.badge_live,
       caiApproved: !!r.cai_approved,
       caiLive: !!r.cai_live,
+      active: !!r.active,
     });
   }
   return map;

@@ -125,6 +125,14 @@ export async function runCohortFollowups(opts: CohortRunOptions = {}): Promise<{
       continue;
     }
 
+    // Churned / no longer a partner (discarded_at set or is_partner=false) →
+    // hard stop, never email a churned brand. Re-checked every run since the
+    // cohort list is frozen and a brand can churn mid-sequence.
+    if (!status.active) {
+      done({ ...base, action: "none", reason: "churned / not a partner" });
+      continue;
+    }
+
     const widgets = renderList(outstandingWidgets(status));
 
     // Scheduled one-off (SE set a "next follow-up" date): suppress the normal
