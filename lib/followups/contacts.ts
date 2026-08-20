@@ -4,11 +4,10 @@
 // emailed (VIP-tab brands, brands not on the sheet, and no-email contacts are
 // intentionally omitted). Keyed by health_brand id.
 //
-// Send-list: May 13, June 29, July 9. VIP-tab brands (listed in the Notion doc,
-// highlighted red) are intentionally omitted — we don't email them. Also
-// omitted: Uplife (#1613, June — no contact on the sheet) and MyVitalC (#1287,
-// June — marked "AB testing, don't email"). A brand with no entry here is
-// never emailed.
+// Send-list: May 12, June 30, July 9. VIP-tab brands (listed in the Notion doc,
+// highlighted red) are intentionally omitted — we don't email them, incl.
+// Advanced Bionutritionals (#1361, VIP). Also omitted: MyVitalC (#1287, June —
+// "AB testing, don't email"). A brand with no entry here is never emailed.
 export const SEND_CONTACTS: Record<number, string[]> = {
   1158: ["ande@shoplamarue.com", "nicole@shoplamarue.com"],            // L'AMARUE
   1307: ["erasmo.defalco@terralotus.shop", "phillip@silkroadep.com", "augustodef1@gmail.com"], // Terra Lotus
@@ -21,7 +20,6 @@ export const SEND_CONTACTS: Record<number, string[]> = {
   1324: ["rakesh@celcius.us", "vishnu@celcius.us"],                  // Celsius Herbs
   1090: ["benoit@follynutrition.com", "hannah@follynutrition.com", "brandon@follynutrition.com"], // Folly Nutrition
   734:  ["harry@zoefull.com", "marcos@zoefull.com", "yannis@zoefull.com"], // Zoefull
-  1361: ["mmesser@soundpub.com", "asuh@soundpub.com", "asiphavong@soundpub.com"], // Advanced Bionutritionals
   307:  ["trisha@akitabiosciences.com", "lourdes@profispray.com"],   // Profi
 
   // ── June (30 brands; VIP KAL Vitamins/One Sol/Create excluded; Uplife #1613 has no contact) ──
@@ -54,6 +52,7 @@ export const SEND_CONTACTS: Record<number, string[]> = {
   1510: ["arianna@helloyumi.com"],                                  // Yumi
   581:  ["alex@nbpure.com", "matt.aporta@nbpure.com"],              // NBPure
   1265: ["Rohan@igateinfotech.com"],                                // Nutrify Supplements
+  1613: ["sales@uplifetoday.com", "awais.saleem2468@gmail.com"],    // Uplife
 
   // ── July (9 brands; VIP Bobbie/AG1/IM8/ONNIT excluded) ──
   215:  ["rami.abrams@siphoxhealth.com", "jordan.moradian@siphox.com"], // SiPhox Health
