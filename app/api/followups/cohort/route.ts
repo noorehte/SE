@@ -3,7 +3,11 @@ import { runCohortFollowups } from "@/lib/followups/cohort-engine";
 import type { CohortMonth } from "@/lib/followups/cohort";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Each brand's bump does a sequential Pylon create (~4s) + state write, so a
+// full-cohort launch (30–40 brands) needs well over the 60s default. 300s (Pro
+// max) fits the whole batch in one run and avoids mid-run timeouts (a timeout
+// between "issue created" and "state saved" could re-send that one brand).
+export const maxDuration = 300;
 
 // Months allowed to fire their FIRST (Day 10) bump, from env — e.g.
 // COHORT_LAUNCH_MONTHS="may". Empty/unset ⇒ the cron only ADVANCES brands that
