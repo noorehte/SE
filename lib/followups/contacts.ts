@@ -22,7 +22,7 @@ export const SEND_CONTACTS: Record<number, string[]> = {
   734:  ["harry@zoefull.com", "marcos@zoefull.com", "yannis@zoefull.com"], // Zoefull
   307:  ["trisha@akitabiosciences.com", "lourdes@profispray.com"],   // Profi
 
-  // ── June (30 brands; VIP KAL Vitamins/One Sol/Create excluded; Uplife #1613 has no contact) ──
+  // ── June (30 brands; excludes VIP KAL Vitamins/One Sol/Create + MyVitalC #1287 "dont email") ──
   1176: ["paul@erythroslight.com", "baha@erythroslight.com"],       // erythroslight
   1358: ["chris@takeultra.com", "ankur@takeultra.com"],             // Ultra Pouches
   1382: ["liz@eezenaturalhealth.com"],                              // eeze Natural Health
