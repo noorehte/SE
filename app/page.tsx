@@ -2,31 +2,39 @@ import { getBrands } from "@/lib/metabase";
 import { getAllScheduled } from "@/lib/scheduled-calls";
 import { getCaiReadyBrands, buildCaiLookup } from "@/lib/cai-sheet";
 import { getReachouts, buildReachoutLookup } from "@/lib/reachouts-sheet";
+import { getSeSprintEntries, buildSeSprintLookup } from "@/lib/se-sprint-sheet";
 import Dashboard from "@/components/Dashboard";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   try {
-    const [brands, scheduledCalls, caiEntries, reachoutEntries] = await Promise.all([
+    const [brands, scheduledCalls, caiEntries, reachoutEntries, seSprintEntries] = await Promise.all([
       getBrands(),
       getAllScheduled().catch((e) => { console.error("getAllScheduled failed:", e); return {} as Record<string, never>; }),
       getCaiReadyBrands(),
       getReachouts(),
+      getSeSprintEntries(),
     ]);
 
     const caiLookup = buildCaiLookup(caiEntries);
     const reachoutLookup = buildReachoutLookup(reachoutEntries);
+    const seSprintLookup = buildSeSprintLookup(seSprintEntries);
     const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
     const enrichedBrands = brands.map((b) => {
       const reachout = reachoutLookup.get(normalize(b.BRAND_NAME));
+      const seSprint = seSprintLookup.get(normalize(b.BRAND_NAME));
       return {
         ...b,
         CAI_IMPLEMENTATION_READY: caiLookup.get(normalize(b.BRAND_NAME)) ?? null,
         ON_REACHOUT_SHEET: reachout != null,
         REACHED_OUT: reachout?.emailed ?? null,
         REACHED_OUT_SEND_LABEL: reachout?.sendLabel ?? null,
+        ON_SE_SPRINT_SHEET: b.ON_SE_SPRINT_SHEET || seSprint != null,
+        SE_SPRINT_SUBMITTED_AT: seSprint?.timestamp ?? null,
+        SE_SPRINT_MYSHOPIFY_URL: seSprint?.myshopifyUrl ?? null,
+        SE_SPRINT_HAS_SHARED_CODE: seSprint?.hasSharedCode ?? null,
       };
     });
 

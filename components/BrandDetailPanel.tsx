@@ -267,6 +267,48 @@ function EditableText({
 // Follow-up controls: a scheduled one-off date (brand said "not ready until X")
 // and a hard disable switch. Both persist as field overrides (Notion only — no
 // hubspotCompanyId passed, so nothing is written to HubSpot).
+function SeSprintControl({ brand, onBrandUpdate }: {
+  brand: Brand;
+  onBrandUpdate?: (brandId: number, updates: Partial<Brand>) => void;
+}) {
+  const [onSprint, setOnSprint] = useState(brand.ON_SE_SPRINT_SHEET);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fromForm = brand.SE_SPRINT_SUBMITTED_AT != null;
+
+  async function toggle() {
+    const next = !onSprint;
+    setOnSprint(next); setBusy(true); setErr(null);
+    const e = await saveFieldOverride(brand.BRAND_ID, "ON_SE_SPRINT_SHEET", next ? "true" : "");
+    if (e) { setErr(e); setOnSprint(!next); } else { onBrandUpdate?.(brand.BRAND_ID, { ON_SE_SPRINT_SHEET: next }); }
+    setBusy(false);
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <div style={{ fontSize: "0.8rem", color: "#fff" }}>{onSprint ? "On SE Sprint queue" : "Not on SE Sprint queue"}</div>
+        <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.4)" }}>
+          {fromForm ? `Submitted the request form (${brand.SE_SPRINT_SUBMITTED_AT})` : "Added manually"}
+        </div>
+        {err && <div style={{ fontSize: "0.7rem", color: "#e05c5c", marginTop: "2px" }}>{err}</div>}
+      </div>
+      <button
+        onClick={toggle}
+        disabled={busy || (onSprint && fromForm)}
+        title={onSprint && fromForm ? "This brand submitted the request form — remove it from the sheet to take it off the queue" : undefined}
+        className="px-3 py-1.5 rounded-lg hover:opacity-80 transition-opacity disabled:opacity-40"
+        style={{
+          background: onSprint ? "rgba(224,92,92,0.12)" : "rgba(233,168,76,0.12)",
+          color: onSprint ? "#e05c5c" : "#e9a84c",
+          fontSize: "0.8rem", border: "none", cursor: busy || (onSprint && fromForm) ? "default" : "pointer", flexShrink: 0,
+        }}>
+        {onSprint ? "Remove from queue" : "Add to queue"}
+      </button>
+    </div>
+  );
+}
+
 function FollowupControls({ brand, onBrandUpdate }: {
   brand: Brand;
   onBrandUpdate?: (brandId: number, updates: Partial<Brand>) => void;
@@ -562,6 +604,15 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
             />
             <Row label="Share threshold met" value={brand.HAS_SHARE_THRESHOLD_MET ? "Yes" : "No"} />
             <EditableText brandId={brand.BRAND_ID} field="COLLABORATOR_CODE" label="Collaborator code" value={brand.COLLABORATOR_CODE} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { COLLABORATOR_CODE: v })} />
+          </div>
+
+          {/* SE Sprint queue — brands land here via the "Request for Assisted
+              Implementation" form (see lib/se-sprint-sheet.ts) or by being
+              added manually. Only a manual add can be removed here — a real
+              form submission keeps showing up on next sync regardless. */}
+          <div className="mb-6">
+            <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>SE Sprint</div>
+            <SeSprintControl brand={brand} onBrandUpdate={onBrandUpdate} />
           </div>
 
           {/* Widget Status — per-type go-live tracking */}

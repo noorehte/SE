@@ -228,6 +228,32 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
     setColumnFilter((prev) => (prev === id ? null : id));
   }
 
+  // Manual "add to SE Sprint" toggle — stored as a Notion field override
+  // (ON_SE_SPRINT_SHEET) alongside the form-synced value (see app/page.tsx),
+  // so it's additive: turning this on never gets clobbered by a later sheet
+  // sync, and turning it off only clears the manual add, not a genuine form
+  // submission (form-driven brands can't be un-toggled here; see the "on
+  // sheet, not manually added" guard in BrandCard's disabled state).
+  async function toggleSeSprint(brandId: number, next: boolean) {
+    setBrands((prev) =>
+      prev.map((b) => (b.BRAND_ID === brandId ? { ...b, ON_SE_SPRINT_SHEET: next } : b))
+    );
+    try {
+      const res = await fetch("/api/field-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, field: "ON_SE_SPRINT_SHEET", value: next ? "true" : "" }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.errors?.join("; ") ?? "Save failed");
+    } catch (e) {
+      setBrands((prev) =>
+        prev.map((b) => (b.BRAND_ID === brandId ? { ...b, ON_SE_SPRINT_SHEET: !next } : b))
+      );
+      alert(`Couldn't save SE Sprint change: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   return (
     <div className="flex min-h-screen" style={{ background: "#0d1b26", color: "#fff" }}>
       <Sidebar active="pipeline" />
@@ -408,6 +434,7 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
               onMove={moveBrand}
               onCardClick={setSelectedBrand}
               onHeaderClick={toggleColumnFilter}
+              onToggleSeSprint={toggleSeSprint}
             />
           ) : (
             <TableView brands={visibleBrands} columns={activeColumns} scheduledCalls={scheduledCalls} onMove={moveBrand} onRowClick={setSelectedBrand} />
@@ -455,6 +482,7 @@ function KanbanView({
   onMove,
   onCardClick,
   onHeaderClick,
+  onToggleSeSprint,
 }: {
   brands: Brand[];
   columns: { id: PipelineStatus; label: string; accent: string }[];
@@ -463,6 +491,7 @@ function KanbanView({
   onMove: (brandId: number, status: PipelineStatus) => void;
   onCardClick: (brand: Brand) => void;
   onHeaderClick: (id: PipelineStatus) => void;
+  onToggleSeSprint: (brandId: number, next: boolean) => void;
 }) {
   const dragBrandId = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<PipelineStatus | null>(null);
@@ -520,7 +549,7 @@ function KanbanView({
                   onClick={() => onCardClick(brand)}
                   className="cursor-pointer active:cursor-grabbing"
                   style={{ cursor: "grab" }}>
-                  <BrandCard brand={brand} accent={col.accent} scheduledCall={scheduledCalls[String(brand.BRAND_ID)] ?? null} />
+                  <BrandCard brand={brand} accent={col.accent} scheduledCall={scheduledCalls[String(brand.BRAND_ID)] ?? null} onToggleSeSprint={onToggleSeSprint} />
                 </div>
               ))}
               {colBrands.length === 0 && (
