@@ -1,10 +1,11 @@
-// Pylon account "Sentiment" custom field, surfaced as a badge on brand cards.
-// Pylon has no brand/HubSpot concept of its own — every account links back to
-// HubSpot via crm_settings.details[source="hubspot"].id, which is the same
-// HUBSPOT_COMPANY_ID already on every Brand (lib/metabase.ts), so that's how
-// brands are matched here rather than the small hand-curated
-// lib/followups/pylon-accounts.ts map (built for a different feature, and far
-// from comprehensive).
+// Pylon account data surfaced on brand cards/detail panel: the "Sentiment"
+// custom field (a badge) and latest_customer_activity_time (shown as "Last
+// communication"). Pylon has no brand/HubSpot concept of its own — every
+// account links back to HubSpot via crm_settings.details[source="hubspot"].id,
+// which is the same HUBSPOT_COMPANY_ID already on every Brand
+// (lib/metabase.ts), so that's how brands are matched here rather than the
+// small hand-curated lib/followups/pylon-accounts.ts map (built for a
+// different feature, and far from comprehensive).
 //
 // Sentiment is a per-org custom field, not a first-class Pylon field, so it's
 // only present on accounts someone has actually set it on (~80% of accounts,
@@ -12,6 +13,13 @@
 // in practice: "positive", "neutral", "frustrated", "high_risk_detractor",
 // "advocate" — treated as an open string here in case Pylon's org config adds
 // more later.
+//
+// A HubSpot company can have more than one linked Pylon account (~13 of ~1235
+// as of the same check — duplicate/merged records in Pylon itself, not
+// something fixable here). When that happens, the account with the most
+// recent latest_customer_activity_time wins, since it's the one more likely
+// to be actively used/up to date; an account with no activity timestamp never
+// overwrites one that has it.
 //
 // Listing ~1200+ accounts takes ~13 paginated calls, which is too slow to run
 // on every dashboard load — the result is cached (Vercel KV in prod, a
@@ -23,7 +31,7 @@ import path from "path";
 
 const PYLON_BASE = "https://api.usepylon.com";
 const CACHE_TTL_SECONDS = 10 * 60;
-const CACHE_KEY = "pylon-sentiment-by-hubspot-id";
+const CACHE_KEY = "pylon-account-data-by-hubspot-id";
 
 function headers() {
   const key = process.env.PYLON_API_KEY;
@@ -34,11 +42,17 @@ function headers() {
 interface PylonAccount {
   custom_fields?: Record<string, { value?: string }>;
   crm_settings?: { details?: { source?: string; id?: string }[] };
+  latest_customer_activity_time?: string;
 }
 
 interface PylonAccountsPage {
   data?: PylonAccount[];
   pagination?: { cursor?: string; has_next_page?: boolean };
+}
+
+export interface PylonAccountData {
+  sentiment: string | null;
+  lastActivityAt: string | null; // ISO timestamp, or null if Pylon has none on file
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -55,16 +69,22 @@ async function fetchAccountsPage(cursor: string | undefined, attempt = 1): Promi
   return json;
 }
 
-async function fetchAllFromPylon(): Promise<Record<string, string>> {
-  const result: Record<string, string> = {};
+async function fetchAllFromPylon(): Promise<Record<string, PylonAccountData>> {
+  const result: Record<string, PylonAccountData> = {};
   let cursor: string | undefined;
   for (let page = 0; page < 30; page++) {
     const data = await fetchAccountsPage(cursor);
     for (const account of data.data ?? []) {
-      const sentiment = account.custom_fields?.sentiment?.value;
-      if (!sentiment) continue;
       const hubspotId = account.crm_settings?.details?.find((d) => d.source === "hubspot")?.id;
-      if (hubspotId) result[hubspotId] = sentiment;
+      if (!hubspotId) continue;
+
+      const sentiment = account.custom_fields?.sentiment?.value ?? null;
+      const lastActivityAt = account.latest_customer_activity_time || null;
+
+      const existing = result[hubspotId];
+      if (!existing || (lastActivityAt && (!existing.lastActivityAt || lastActivityAt > existing.lastActivityAt))) {
+        result[hubspotId] = { sentiment, lastActivityAt };
+      }
     }
     if (!data.pagination?.has_next_page) break;
     cursor = data.pagination.cursor;
@@ -75,7 +95,7 @@ async function fetchAllFromPylon(): Promise<Record<string, string>> {
 // Mirror lib/followups/state.ts: Vercel KV when configured, otherwise a
 // gitignored local JSON file so this is exercisable locally without Redis.
 const useKv = () => Boolean(process.env.KV_REST_API_URL);
-const DEV_CACHE_PATH = path.join(process.cwd(), ".dev-pylon-sentiment-cache.json");
+const DEV_CACHE_PATH = path.join(process.cwd(), ".dev-pylon-account-data-cache.json");
 
 let _kv: VercelKV | null = null;
 function kvClient(): VercelKV {
@@ -89,12 +109,12 @@ function kvClient(): VercelKV {
 }
 
 interface CacheEntry {
-  data: Record<string, string>;
+  data: Record<string, PylonAccountData>;
   expiresAt: number; // epoch ms — only used by the file fallback; KV expires the key itself
 }
 
-async function readCache(): Promise<Record<string, string> | null> {
-  if (useKv()) return (await kvClient().get<Record<string, string>>(CACHE_KEY)) ?? null;
+async function readCache(): Promise<Record<string, PylonAccountData> | null> {
+  if (useKv()) return (await kvClient().get<Record<string, PylonAccountData>>(CACHE_KEY)) ?? null;
   try {
     const entry = JSON.parse(await readFile(DEV_CACHE_PATH, "utf8")) as CacheEntry;
     return entry.expiresAt > Date.now() ? entry.data : null;
@@ -103,7 +123,7 @@ async function readCache(): Promise<Record<string, string> | null> {
   }
 }
 
-async function writeCache(data: Record<string, string>): Promise<void> {
+async function writeCache(data: Record<string, PylonAccountData>): Promise<void> {
   if (useKv()) {
     await kvClient().set(CACHE_KEY, data, { ex: CACHE_TTL_SECONDS });
   } else {
@@ -111,8 +131,8 @@ async function writeCache(data: Record<string, string>): Promise<void> {
   }
 }
 
-/** HubSpot company id (as a string, matching Brand.HUBSPOT_COMPANY_ID.toString()) -> sentiment value */
-export async function getSentimentByHubspotId(): Promise<Map<string, string>> {
+/** HubSpot company id (as a string, matching Brand.HUBSPOT_COMPANY_ID.toString()) -> Pylon account data */
+export async function getPylonAccountDataByHubspotId(): Promise<Map<string, PylonAccountData>> {
   if (!process.env.PYLON_API_KEY) return new Map();
 
   const cached = await readCache().catch(() => null);

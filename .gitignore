@@ -39,7 +39,7 @@ yarn-error.log*
 # local dev state stores (KV fallback)
 .dev-tokens.json
 .dev-followups.json
-.dev-pylon-sentiment-cache.json
+.dev-pylon-account-data-cache.json
 
 # typescript
 *.tsbuildinfo

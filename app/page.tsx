@@ -3,20 +3,20 @@ import { getAllScheduled } from "@/lib/scheduled-calls";
 import { getCaiReadyBrands, buildCaiLookup } from "@/lib/cai-sheet";
 import { getReachouts, buildReachoutLookup } from "@/lib/reachouts-sheet";
 import { getSeSprintEntries, buildSeSprintLookup } from "@/lib/se-sprint-sheet";
-import { getSentimentByHubspotId } from "@/lib/pylon-sentiment";
+import { getPylonAccountDataByHubspotId } from "@/lib/pylon-sentiment";
 import Dashboard from "@/components/Dashboard";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   try {
-    const [brands, scheduledCalls, caiEntries, reachoutEntries, seSprintEntries, sentimentByHubspotId] = await Promise.all([
+    const [brands, scheduledCalls, caiEntries, reachoutEntries, seSprintEntries, pylonDataByHubspotId] = await Promise.all([
       getBrands(),
       getAllScheduled().catch((e) => { console.error("getAllScheduled failed:", e); return {} as Record<string, never>; }),
       getCaiReadyBrands(),
       getReachouts(),
       getSeSprintEntries(),
-      getSentimentByHubspotId().catch((e) => { console.error("getSentimentByHubspotId failed:", e); return new Map<string, string>(); }),
+      getPylonAccountDataByHubspotId().catch((e) => { console.error("getPylonAccountDataByHubspotId failed:", e); return new Map(); }),
     ]);
 
     const caiLookup = buildCaiLookup(caiEntries);
@@ -27,10 +27,12 @@ export default async function Home() {
     const enrichedBrands = brands.map((b) => {
       const reachout = reachoutLookup.get(normalize(b.BRAND_NAME));
       const seSprint = seSprintLookup.get(normalize(b.BRAND_NAME));
+      const pylon = b.HUBSPOT_COMPANY_ID != null ? pylonDataByHubspotId.get(String(b.HUBSPOT_COMPANY_ID)) : undefined;
       return {
         ...b,
         CAI_IMPLEMENTATION_READY: caiLookup.get(normalize(b.BRAND_NAME)) ?? null,
-        PYLON_SENTIMENT: b.HUBSPOT_COMPANY_ID != null ? sentimentByHubspotId.get(String(b.HUBSPOT_COMPANY_ID)) ?? null : null,
+        PYLON_SENTIMENT: pylon?.sentiment ?? null,
+        PYLON_LAST_COMMUNICATION_AT: pylon?.lastActivityAt ?? null,
         ON_REACHOUT_SHEET: reachout != null,
         REACHED_OUT: reachout?.emailed ?? null,
         REACHED_OUT_SEND_LABEL: reachout?.sendLabel ?? null,

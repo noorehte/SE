@@ -149,6 +149,7 @@ export interface Brand {
   WIDGET_STATUSES: Record<string, WidgetTypeStatus>;
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
   PYLON_SENTIMENT: string | null; // Pylon account's "Sentiment" custom field, matched by HUBSPOT_COMPANY_ID — null if no Pylon account or no sentiment set
+  PYLON_LAST_COMMUNICATION_AT: string | null; // Pylon account's latest_customer_activity_time — null if no Pylon account or no activity on file
   ON_REACHOUT_SHEET: boolean; // true if the brand appears in any bucket on the email-reachouts sheet at all
   REACHED_OUT: boolean | null; // "Emailed?" from the email-reachouts sheet — null if not on the sheet, or listed but not yet marked Y/N
   REACHED_OUT_SEND_LABEL: string | null; // that bucket's send date/label, e.g. "Send 7/31" or "Send in Aug"
@@ -629,6 +630,7 @@ export async function getBrands(): Promise<Brand[]> {
       WIDGET_STATUSES: widgetStatusByBrand.get(brandId) ?? {},
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
       PYLON_SENTIMENT: null as string | null,
+      PYLON_LAST_COMMUNICATION_AT: null as string | null,
       ON_REACHOUT_SHEET: false,
       REACHED_OUT: null as boolean | null,
       REACHED_OUT_SEND_LABEL: null as string | null,

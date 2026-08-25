@@ -68,6 +68,10 @@ function Avatar({ name, title }: { name: string | null; title: string }) {
   );
 }
 
+function daysAgo(iso: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+}
+
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -545,6 +549,11 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
                   style={{ background: sentimentStyle(brand.PYLON_SENTIMENT).color + "26", color: sentimentStyle(brand.PYLON_SENTIMENT).color }}>
                   {sentimentStyle(brand.PYLON_SENTIMENT).label}
                 </span>
+              } />
+            )}
+            {brand.PYLON_LAST_COMMUNICATION_AT && (
+              <Row label="Last communication" value={
+                `${new Date(brand.PYLON_LAST_COMMUNICATION_AT).toLocaleDateString()} (${daysAgo(brand.PYLON_LAST_COMMUNICATION_AT)}d ago)`
               } />
             )}
           </div>
