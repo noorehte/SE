@@ -13,10 +13,18 @@
 export interface SeSprintEntry {
   name: string;
   timestamp: string; // raw sheet text, e.g. "8/12/2026 14:03:22"
-  myshopifyUrl: string;
-  hasSharedCode: string; // raw "Yes" / "No" / "Unsure"
-  collaboratorCode: string;
   email: string;
+  alreadyTriedWidgets: string; // "Have you already tried to implement the FrontrowMD widgets on your end?" — Yes/No/Unsure
+  hostedOn: string; // "Where is your website hosted?" — Shopify/Replo/Wordpress/Gempages/Funnelish/Other
+  pageBuilder: string; // "Are you using one of the following page builders?"
+  isHeadless: string; // "Is your set up Headless?" — Yes/No
+  themeToClone: string; // "Which theme should we duplicate before starting the work..."
+  extraProductTemplate: string; // "Do you need the FrontrowMD widgets on a Product Template outside of the default..."
+  notes: string; // "Is there anything you'd like to share about your website experience..."
+  wantsHomepageBadge: string; // "Would you like to feature a badge on the homepage?" — Yes/No/Unsure
+  hasSharedCode: string; // raw "Yes" / "No" / "Unsure" — self-reported, don't treat as proof a code exists
+  collaboratorCode: string; // the code itself, if the brand typed it into the form
+  myshopifyUrl: string;
 }
 
 export async function getSeSprintEntries(): Promise<SeSprintEntry[]> {
