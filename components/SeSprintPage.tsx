@@ -26,6 +26,26 @@ function collaboratorCode(brand: Brand): string | null {
   return brand.COLLABORATOR_CODE ?? brand.SE_SPRINT_COLLABORATOR_CODE ?? null;
 }
 
+// Brands type their myshopify URL in free text (with or without a scheme,
+// with or without a trailing slash/path) — pull out just the store's
+// {handle}.myshopify.com host and link straight to its Shopify admin login,
+// rather than the storefront, since that's what an SE actually needs to get
+// into the store (collaborator access still has to come through separately;
+// this just gets you to the right login page).
+function shopifyAdminUrl(raw: string | null | undefined): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let host: string;
+  try {
+    host = new URL(withScheme).hostname;
+  } catch {
+    return null;
+  }
+  if (!/\.myshopify\.com$/i.test(host)) return null;
+  return `https://${host}/admin`;
+}
+
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -79,7 +99,17 @@ function SprintRequestPanel({ brand, entry, onClose }: { brand: Brand; entry: Se
             <Field label="Theme to duplicate" value={entry.themeToClone} />
             <Field label="Needs widgets on a non-default product template?" value={entry.extraProductTemplate} />
             <Field label="Wants a homepage badge?" value={entry.wantsHomepageBadge} />
-            <Field label="myshopify URL" value={entry.myshopifyUrl} />
+            <div className="py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>myshopify URL</div>
+              {shopifyAdminUrl(entry.myshopifyUrl) ? (
+                <a href={shopifyAdminUrl(entry.myshopifyUrl)!} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: "0.875rem", color: "#72a4bf" }} className="flex items-center gap-1 hover:opacity-80">
+                  {entry.myshopifyUrl.trim()} — open Shopify admin <ExternalLink size={11} />
+                </a>
+              ) : (
+                <div style={{ fontSize: "0.875rem", color: "#fff" }}>{entry.myshopifyUrl?.trim() || "—"}</div>
+              )}
+            </div>
             <Field label="Notes for the SE" value={entry.notes} />
             <div className="py-3">
               <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Collaborator code</div>
@@ -184,8 +214,13 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
                             <span style={{ fontSize: "0.8rem", color: "#e9a84c", fontWeight: 600 }}>Not on file</span>
                           )}
                         </td>
-                        <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.8rem" }}>
-                          {brand.SE_SPRINT_MYSHOPIFY_URL ?? "—"}
+                        <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.8rem" }} onClick={(e) => e.stopPropagation()}>
+                          {shopifyAdminUrl(brand.SE_SPRINT_MYSHOPIFY_URL) ? (
+                            <a href={shopifyAdminUrl(brand.SE_SPRINT_MYSHOPIFY_URL)!} target="_blank" rel="noopener noreferrer"
+                              style={{ color: "#72a4bf" }} className="flex items-center gap-1 hover:opacity-80" title="Open Shopify admin">
+                              {brand.SE_SPRINT_MYSHOPIFY_URL} <ExternalLink size={11} />
+                            </a>
+                          ) : (brand.SE_SPRINT_MYSHOPIFY_URL || "—")}
                         </td>
                       </tr>
                     );
