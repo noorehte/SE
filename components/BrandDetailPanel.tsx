@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Brand, WIDGET_TYPE_LABELS, WidgetTypeStatus, isBrandStuck } from "@/lib/metabase";
 import { ALL_COLUMNS, ScheduledCall } from "./Dashboard";
+import { sentimentStyle } from "./BrandCard";
 import { SE_INFO } from "@/lib/se-info";
 import { X, ExternalLink, CalendarPlus, Copy, Check, Pencil } from "lucide-react";
 
@@ -538,6 +539,14 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
             <Row label="Days in status" value={<span style={{ color: isStuck ? "#e05c5c" : "#fff" }}>{brand.DAYS_IN_STATUS}d</span>} />
             <Row label="Created" value={new Date(brand.BRAND_CREATED_AT).toLocaleDateString()} />
             <Row label="Last sign-in" value={brand.ANY_ADMIN_LAST_SIGNED_IN_AT ? new Date(brand.ANY_ADMIN_LAST_SIGNED_IN_AT).toLocaleDateString() : "Never"} />
+            {brand.PYLON_SENTIMENT && (
+              <Row label="Pylon sentiment" value={
+                <span className="px-1.5 py-0.5 rounded text-xs font-semibold"
+                  style={{ background: sentimentStyle(brand.PYLON_SENTIMENT).color + "26", color: sentimentStyle(brand.PYLON_SENTIMENT).color }}>
+                  {sentimentStyle(brand.PYLON_SENTIMENT).label}
+                </span>
+              } />
+            )}
           </div>
 
           {/* Products */}

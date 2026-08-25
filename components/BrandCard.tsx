@@ -28,14 +28,14 @@ export const SEGMENT_STYLES: Record<string, { label: string; color: string }> = 
 // Pylon account "Sentiment" custom field — an open string in principle (see
 // lib/pylon-sentiment.ts), but these are the values actually in use as of
 // Aug 2026. An unrecognized value still renders, just in a neutral gray.
-const SENTIMENT_STYLES: Record<string, { label: string; color: string }> = {
+export const SENTIMENT_STYLES: Record<string, { label: string; color: string }> = {
   positive:             { label: "Positive",     color: "#4caf82" },
   advocate:             { label: "Advocate",      color: "#8b7fe8" },
   neutral:              { label: "Neutral",       color: "#72a4bf" },
   frustrated:           { label: "Frustrated",    color: "#e9a84c" },
   high_risk_detractor:  { label: "High Risk",     color: "#e05c5c" },
 };
-function sentimentStyle(value: string): { label: string; color: string } {
+export function sentimentStyle(value: string): { label: string; color: string } {
   return SENTIMENT_STYLES[value] ?? { label: value, color: "#8a8a8a" };
 }
 
