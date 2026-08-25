@@ -212,7 +212,7 @@ function EditableSelect({
   );
 }
 
-function EditableText({
+export function EditableText({
   brandId, field, label, value, hubspotCompanyId, onSaved,
 }: { brandId: number; field: string; label: string; value: string | null; hubspotCompanyId?: number | null; onSaved?: (field: string, value: string) => void }) {
   const [editing, setEditing] = useState(false);

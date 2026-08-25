@@ -23,7 +23,7 @@ export default async function Page() {
       REACHED_OUT_SEND_LABEL: reachout?.sendLabel ?? null,
       ON_SE_SPRINT_SHEET: !b.SE_SPRINT_DISMISSED && (b.ON_SE_SPRINT_SHEET || seSprint != null),
       SE_SPRINT_SUBMITTED_AT: seSprint?.timestamp ?? null,
-      SE_SPRINT_MYSHOPIFY_URL: seSprint?.myshopifyUrl ?? null,
+      SE_SPRINT_MYSHOPIFY_URL: b.SE_SPRINT_MYSHOPIFY_URL_OVERRIDE ?? seSprint?.myshopifyUrl ?? null,
       SE_SPRINT_HAS_SHARED_CODE: seSprint?.hasSharedCode ?? null,
       SE_SPRINT_COLLABORATOR_CODE: seSprint?.collaboratorCode ?? null,
     };

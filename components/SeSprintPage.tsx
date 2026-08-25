@@ -5,6 +5,7 @@ import { Brand } from "@/lib/metabase";
 import { SeSprintEntry } from "@/lib/se-sprint-sheet";
 import { ALL_COLUMNS } from "./Dashboard";
 import Sidebar from "./Sidebar";
+import { EditableText } from "./BrandDetailPanel";
 import { Rocket, X, ExternalLink, Trash2 } from "lucide-react";
 
 // A brand is in the SE Sprint queue once it's submitted the "Request for
@@ -59,8 +60,13 @@ function Field({ label, value }: { label: string; value: string | null | undefin
 // headless/theme/notes/etc. — rather than the brand's general pipeline
 // status, SE/AM/Ops, or widget history (that's what BrandDetailPanel is
 // for, and it's not what an SE needs when working through this queue).
-function SprintRequestPanel({ brand, entry, onClose, onRemove }: { brand: Brand; entry: SeSprintEntry | undefined; onClose: () => void; onRemove: () => void }) {
-  const code = collaboratorCode(brand);
+function SprintRequestPanel({ brand, entry, onClose, onRemove, onBrandUpdate }: {
+  brand: Brand;
+  entry: SeSprintEntry | undefined;
+  onClose: () => void;
+  onRemove: () => void;
+  onBrandUpdate: (brandId: number, updates: Partial<Brand>) => void;
+}) {
   const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
 
   return (
@@ -92,11 +98,12 @@ function SprintRequestPanel({ brand, entry, onClose, onRemove }: { brand: Brand;
           Implementation request
         </div>
 
-        {!entry ? (
+        {!entry && (
           <div className="mt-3" style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.4)" }}>
             Added manually — no form submission on file for this brand.
           </div>
-        ) : (
+        )}
+        {entry && (
           <div className="mt-1">
             <Field label="Submitted" value={entry.timestamp} />
             <Field label="Submitted by" value={entry.email} />
@@ -107,30 +114,41 @@ function SprintRequestPanel({ brand, entry, onClose, onRemove }: { brand: Brand;
             <Field label="Theme to duplicate" value={entry.themeToClone} />
             <Field label="Needs widgets on a non-default product template?" value={entry.extraProductTemplate} />
             <Field label="Wants a homepage badge?" value={entry.wantsHomepageBadge} />
-            <div className="py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>myshopify URL</div>
-              {shopifyAdminUrl(entry.myshopifyUrl) ? (
-                <a href={shopifyAdminUrl(entry.myshopifyUrl)!} target="_blank" rel="noopener noreferrer"
-                  style={{ fontSize: "0.875rem", color: "#72a4bf" }} className="flex items-center gap-1 hover:opacity-80">
-                  {entry.myshopifyUrl.trim()} — open Shopify admin <ExternalLink size={11} />
-                </a>
-              ) : (
-                <div style={{ fontSize: "0.875rem", color: "#fff" }}>{entry.myshopifyUrl?.trim() || "—"}</div>
-              )}
-            </div>
             <Field label="Notes for the SE" value={entry.notes} />
-            <div className="py-3">
-              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Collaborator code</div>
-              {code ? (
-                <div style={{ fontSize: "0.875rem", color: "#4caf82", fontFamily: "monospace" }}>{code}</div>
-              ) : (
-                <div style={{ fontSize: "0.875rem", color: "#e9a84c" }}>
-                  Not on file{entry.hasSharedCode?.toLowerCase() === "yes" ? " — brand says they've already shared it elsewhere" : ""}
-                </div>
-              )}
-            </div>
+            {entry.hasSharedCode && (
+              <Field label="Brand says code already shared?" value={entry.hasSharedCode} />
+            )}
           </div>
         )}
+
+        <div className="mt-4" style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          SE tracking
+        </div>
+        <div className="mt-1">
+          <EditableText
+            brandId={brand.BRAND_ID}
+            field="SE_SPRINT_MYSHOPIFY_URL_OVERRIDE"
+            label="myshopify domain"
+            value={brand.SE_SPRINT_MYSHOPIFY_URL}
+            onSaved={(_, v) => onBrandUpdate(brand.BRAND_ID, { SE_SPRINT_MYSHOPIFY_URL: v, SE_SPRINT_MYSHOPIFY_URL_OVERRIDE: v })}
+          />
+          {shopifyAdminUrl(brand.SE_SPRINT_MYSHOPIFY_URL) && (
+            <div className="py-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <a href={shopifyAdminUrl(brand.SE_SPRINT_MYSHOPIFY_URL)!} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: "0.8rem", color: "#72a4bf" }} className="flex items-center justify-end gap-1 hover:opacity-80">
+                Open Shopify admin <ExternalLink size={11} />
+              </a>
+            </div>
+          )}
+          <EditableText
+            brandId={brand.BRAND_ID}
+            field="COLLABORATOR_CODE"
+            label="Collaborator code"
+            value={brand.COLLABORATOR_CODE}
+            hubspotCompanyId={brand.HUBSPOT_COMPANY_ID}
+            onSaved={(_, v) => onBrandUpdate(brand.BRAND_ID, { COLLABORATOR_CODE: v })}
+          />
+        </div>
       </div>
     </div>
   );
@@ -165,6 +183,11 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
       setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, ON_SE_SPRINT_SHEET: true } : b)));
       alert(`Couldn't remove brand from SE Sprint: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  function updateBrand(brandId: number, updates: Partial<Brand>) {
+    setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, ...updates } : b)));
+    setSelectedBrand((prev) => prev && prev.BRAND_ID === brandId ? { ...prev, ...updates } : prev);
   }
 
   return (
@@ -289,6 +312,7 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
           entry={entriesByBrandId[selectedBrand.BRAND_ID]}
           onClose={() => setSelectedBrand(null)}
           onRemove={() => removeBrand(selectedBrand.BRAND_ID)}
+          onBrandUpdate={updateBrand}
         />
       )}
     </div>

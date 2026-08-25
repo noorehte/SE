@@ -156,6 +156,7 @@ export interface Brand {
   SE_SPRINT_MYSHOPIFY_URL: string | null;
   SE_SPRINT_HAS_SHARED_CODE: string | null; // raw "Yes" / "No" / "Unsure" from the form
   SE_SPRINT_COLLABORATOR_CODE: string | null; // code the brand typed into the form itself
+  SE_SPRINT_MYSHOPIFY_URL_OVERRIDE: string | null; // SE-corrected myshopify domain — wins over what the brand typed into the form
   SE_SPRINT_DISMISSED: boolean; // manually removed from the SE Sprint queue — wins over both the form and a manual add
   ONBOARDING_CHANNEL: "in_app" | "external" | null; // "in_app" = onboarded via Brand Portal (and has portal access)
   REVIEWS_DELIVERED: number;
@@ -639,6 +640,7 @@ export async function getBrands(): Promise<Brand[]> {
       SE_SPRINT_MYSHOPIFY_URL: null as string | null,
       SE_SPRINT_HAS_SHARED_CODE: null as string | null,
       SE_SPRINT_COLLABORATOR_CODE: null as string | null,
+      SE_SPRINT_MYSHOPIFY_URL_OVERRIDE: f.SE_SPRINT_MYSHOPIFY_URL_OVERRIDE || null,
       SE_SPRINT_DISMISSED: f.SE_SPRINT_DISMISSED === "true",
       ONBOARDING_CHANNEL: onboardingChannelByBrand.get(brandId) ?? null,
       REVIEWS_DELIVERED: reviewsDeliveredByBrand.get(brandId) ?? 0,
