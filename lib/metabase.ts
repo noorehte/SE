@@ -155,6 +155,7 @@ export interface Brand {
   SE_SPRINT_SUBMITTED_AT: string | null; // raw form Timestamp text, or null if not on the sheet
   SE_SPRINT_MYSHOPIFY_URL: string | null;
   SE_SPRINT_HAS_SHARED_CODE: string | null; // raw "Yes" / "No" / "Unsure" from the form
+  SE_SPRINT_COLLABORATOR_CODE: string | null; // code the brand typed into the form itself
   ONBOARDING_CHANNEL: "in_app" | "external" | null; // "in_app" = onboarded via Brand Portal (and has portal access)
   REVIEWS_DELIVERED: number;
   BADGE_READY_DATE: string | null;
@@ -636,6 +637,7 @@ export async function getBrands(): Promise<Brand[]> {
       SE_SPRINT_SUBMITTED_AT: null as string | null,
       SE_SPRINT_MYSHOPIFY_URL: null as string | null,
       SE_SPRINT_HAS_SHARED_CODE: null as string | null,
+      SE_SPRINT_COLLABORATOR_CODE: null as string | null,
       ONBOARDING_CHANNEL: onboardingChannelByBrand.get(brandId) ?? null,
       REVIEWS_DELIVERED: reviewsDeliveredByBrand.get(brandId) ?? 0,
       BADGE_READY_DATE: readyDatesByBrand.get(brandId)?.badge ?? null,

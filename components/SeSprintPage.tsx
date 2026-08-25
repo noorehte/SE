@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Brand } from "@/lib/metabase";
 import { ALL_COLUMNS } from "./Dashboard";
 import Sidebar from "./Sidebar";
+import BrandDetailPanel from "./BrandDetailPanel";
 import { Rocket } from "lucide-react";
 
 // A brand is in the SE Sprint queue once it's submitted the "Request for
@@ -17,8 +18,10 @@ function sprintBrands(brands: Brand[]): Brand[] {
 }
 
 export default function SeSprintPage({ initialBrands }: { initialBrands: Brand[] }) {
+  const [brands, setBrands] = useState(initialBrands);
   const [codeFilter, setCodeFilter] = useState<"all" | "pending">("all");
-  const queue = sprintBrands(initialBrands);
+  const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
+  const queue = sprintBrands(brands);
   const pending = queue.filter((b) => b.SE_SPRINT_HAS_SHARED_CODE?.toLowerCase() !== "yes");
   const filtered = codeFilter === "pending" ? pending : queue;
 
@@ -79,7 +82,8 @@ export default function SeSprintPage({ initialBrands }: { initialBrands: Brand[]
                     const col = ALL_COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
                     const hasSharedCode = brand.SE_SPRINT_HAS_SHARED_CODE?.toLowerCase() === "yes";
                     return (
-                      <tr key={brand.BRAND_ID} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
+                      <tr key={brand.BRAND_ID} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer" }}
+                        onClick={() => setSelectedBrand(brand)}
                         onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
                         <td className="px-4 py-3" style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "0.9rem", fontWeight: 600, color: "#fff" }}>
@@ -93,9 +97,24 @@ export default function SeSprintPage({ initialBrands }: { initialBrands: Brand[]
                         <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.SE_OWNER ?? "—"}</td>
                         <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.8rem" }}>{brand.SE_SPRINT_SUBMITTED_AT ?? "—"}</td>
                         <td className="px-4 py-3">
-                          <span style={{ fontSize: "0.8rem", color: hasSharedCode ? "#4caf82" : "#e9a84c", fontWeight: 600 }}>
-                            {brand.SE_SPRINT_HAS_SHARED_CODE ?? "—"}
-                          </span>
+                          {(() => {
+                            // Prefer the SE-recorded code (COLLABORATOR_CODE) over
+                            // what the brand typed into the form themselves, since
+                            // an SE may have since corrected/verified it.
+                            const code = brand.COLLABORATOR_CODE ?? brand.SE_SPRINT_COLLABORATOR_CODE;
+                            if (hasSharedCode && code) {
+                              return (
+                                <span style={{ fontSize: "0.8rem", color: "#4caf82", fontFamily: "monospace" }}>
+                                  {code}
+                                </span>
+                              );
+                            }
+                            return (
+                              <span style={{ fontSize: "0.8rem", color: hasSharedCode ? "#4caf82" : "#e9a84c", fontWeight: 600 }}>
+                                {brand.SE_SPRINT_HAS_SHARED_CODE ?? "—"}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.8rem" }}>
                           {brand.SE_SPRINT_MYSHOPIFY_URL ?? "—"}
@@ -109,6 +128,18 @@ export default function SeSprintPage({ initialBrands }: { initialBrands: Brand[]
           )}
         </div>
       </div>
+
+      {selectedBrand && (
+        <BrandDetailPanel
+          brand={selectedBrand}
+          scheduledCall={null}
+          onClose={() => setSelectedBrand(null)}
+          onBrandUpdate={(brandId, updates) => {
+            setBrands((prev) => prev.map((b) => b.BRAND_ID === brandId ? { ...b, ...updates } : b));
+            setSelectedBrand((prev) => prev && prev.BRAND_ID === brandId ? { ...prev, ...updates } : prev);
+          }}
+        />
+      )}
     </div>
   );
 }

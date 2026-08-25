@@ -35,6 +35,7 @@ export default async function Home() {
         SE_SPRINT_SUBMITTED_AT: seSprint?.timestamp ?? null,
         SE_SPRINT_MYSHOPIFY_URL: seSprint?.myshopifyUrl ?? null,
         SE_SPRINT_HAS_SHARED_CODE: seSprint?.hasSharedCode ?? null,
+        SE_SPRINT_COLLABORATOR_CODE: seSprint?.collaboratorCode ?? null,
       };
     });
 
