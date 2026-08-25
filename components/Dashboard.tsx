@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
-import BrandCard, { SEGMENT_STYLES } from "./BrandCard";
+import BrandCard, { SEGMENT_STYLES, SENTIMENT_STYLES } from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
 import { Download, LayoutGrid, List, RefreshCw, Search } from "lucide-react";
 import Sidebar from "./Sidebar";
@@ -87,6 +87,11 @@ function exportBrandsCsv(brands: Brand[], columns: { id: PipelineStatus; label: 
 // each card, so "Strategic" here means exactly what the colored chip means.
 const SEGMENTS = Object.keys(SEGMENT_STYLES);
 
+// Same idea for Pylon sentiment — same keys/labels BrandCard uses for the
+// sentiment badge. Brands with no Pylon sentiment data are simply excluded
+// when a specific sentiment is selected (no "unknown" bucket).
+const SENTIMENTS = Object.keys(SENTIMENT_STYLES);
+
 // A brand "needs outreach" if it's sitting in a status where the next step is
 // literally an SE call (a fresh onboarding call, or a re-engagement call for
 // a brand that went inactive) and nothing's on the books for them yet.
@@ -101,6 +106,7 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   const [view, setView] = useState<"kanban" | "table">("kanban");
   const [seFilter, setSeFilter] = useState<string>("all");
   const [segmentFilter, setSegmentFilter] = useState<string>("all");
+  const [sentimentFilter, setSentimentFilter] = useState<string>("all");
   const [columnFilter, setColumnFilter] = useState<PipelineStatus | null>(null);
   const [statFilter, setStatFilter] = useState<"all" | "in_progress" | "stuck" | "live" | "needs_outreach">("all");
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
@@ -134,9 +140,13 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   const segmentMatched = segmentFilter === "all"
     ? seFiltered
     : seFiltered.filter((b) => b.KIND?.toLowerCase() === segmentFilter);
+
+  const sentimentMatched = sentimentFilter === "all"
+    ? segmentMatched
+    : segmentMatched.filter((b) => b.PYLON_SENTIMENT === sentimentFilter);
   // Stat cards/table stay churn-free; the Kanban board's Churned column
-  // (kanbanBrands below) uses segmentMatched directly, before this split.
-  const segmentFiltered = segmentMatched.filter((b) => b.PIPELINE_STATUS !== "churned");
+  // (kanbanBrands below) uses sentimentMatched directly, before this split.
+  const segmentFiltered = sentimentMatched.filter((b) => b.PIPELINE_STATUS !== "churned");
 
   const statFiltered = statFilter === "all" ? segmentFiltered
     : statFilter === "in_progress" ? segmentFiltered.filter(b => !["live", "was_live"].includes(b.PIPELINE_STATUS))
@@ -173,12 +183,12 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   // The Kanban board always shows a Churned column alongside the other
   // (non-churned) columns, regardless of View all — unlike the stat cards
   // and table, which stay churn-free so "Total brands" etc. aren't skewed.
-  // Built off segmentMatched (search/SE/segment applied, churned brands
-  // still included) rather than `filtered`, since stat/widget/date filters
-  // don't apply meaningfully to a brand that's no longer active.
+  // Built off sentimentMatched (search/SE/segment/sentiment applied, churned
+  // brands still included) rather than `filtered`, since stat/widget/date
+  // filters don't apply meaningfully to a brand that's no longer active.
   const churnedColumn = ALL_COLUMNS.find((c) => c.id === "churned")!;
   const kanbanColumns = [...activeColumns, churnedColumn];
-  const churnedBrands = segmentMatched.filter((b) => b.PIPELINE_STATUS === "churned");
+  const churnedBrands = sentimentMatched.filter((b) => b.PIPELINE_STATUS === "churned");
   const kanbanBrands = [...filtered, ...churnedBrands];
 
   const visibleBrands = columnFilter ? filtered.filter((b) => b.PIPELINE_STATUS === columnFilter) : filtered;
@@ -310,8 +320,8 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
                 style={{ color: dateTo ? "#fff" : "rgba(255,255,255,0.4)", fontSize: "0.8rem", colorScheme: "dark" }}
               />
             </div>
-            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search || dateFrom || dateTo || segmentFilter !== "all") && (
-              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); setDateFrom(""); setDateTo(""); setSegmentFilter("all"); }}
+            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search || dateFrom || dateTo || segmentFilter !== "all" || sentimentFilter !== "all") && (
+              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); setDateFrom(""); setDateTo(""); setSegmentFilter("all"); setSentimentFilter("all"); }}
                 className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
                 ✕ Clear filter
@@ -325,6 +335,15 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
             >
               <option value="all">All Segments</option>
               {SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_STYLES[s].label}</option>)}
+            </select>
+            <select
+              value={sentimentFilter}
+              onChange={(e) => setSentimentFilter(e.target.value)}
+              className="text-sm rounded-lg px-3 py-2"
+              style={{ background: "rgba(255,255,255,0.07)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)", fontSize: "0.875rem" }}
+            >
+              <option value="all">All Sentiment</option>
+              {SENTIMENTS.map((s) => <option key={s} value={s}>{SENTIMENT_STYLES[s].label}</option>)}
             </select>
             <select
               value={seFilter}
