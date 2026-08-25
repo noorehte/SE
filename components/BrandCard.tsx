@@ -25,6 +25,20 @@ export const SEGMENT_STYLES: Record<string, { label: string; color: string }> = 
   mid_market:  { label: "Mid-Market",  color: "#fbbf24" },
 };
 
+// Pylon account "Sentiment" custom field — an open string in principle (see
+// lib/pylon-sentiment.ts), but these are the values actually in use as of
+// Aug 2026. An unrecognized value still renders, just in a neutral gray.
+const SENTIMENT_STYLES: Record<string, { label: string; color: string }> = {
+  positive:             { label: "Positive",     color: "#4caf82" },
+  advocate:             { label: "Advocate",      color: "#8b7fe8" },
+  neutral:              { label: "Neutral",       color: "#72a4bf" },
+  frustrated:           { label: "Frustrated",    color: "#e9a84c" },
+  high_risk_detractor:  { label: "High Risk",     color: "#e05c5c" },
+};
+function sentimentStyle(value: string): { label: string; color: string } {
+  return SENTIMENT_STYLES[value] ?? { label: value, color: "#8a8a8a" };
+}
+
 const OWNER_INITIALS: Record<string, string> = {
   maha: "MH", noor: "NR", naumaan: "NM",
   mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK",
@@ -146,6 +160,22 @@ export default function BrandCard({ brand, accent, scheduledCall, onToggleSeSpri
               fontSize: "0.68rem",
             }}>
             ✓ {brand.CAI_IMPLEMENTATION_READY} Ready
+          </span>
+        </div>
+      )}
+
+      {/* Pylon sentiment badge — matched to the brand's Pylon account by
+          HubSpot company id; absent for brands with no Pylon account or no
+          sentiment set there. */}
+      {brand.PYLON_SENTIMENT && (
+        <div className="mt-1.5">
+          <span className="px-1.5 py-0.5 rounded text-xs font-semibold"
+            style={{
+              background: sentimentStyle(brand.PYLON_SENTIMENT).color + "26",
+              color: sentimentStyle(brand.PYLON_SENTIMENT).color,
+              fontSize: "0.68rem",
+            }}>
+            {sentimentStyle(brand.PYLON_SENTIMENT).label}
           </span>
         </div>
       )}

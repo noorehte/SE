@@ -2,12 +2,19 @@ import { getBrands } from "@/lib/metabase";
 import { getCaiReadyBrands, buildCaiLookup } from "@/lib/cai-sheet";
 import { getReachouts, buildReachoutLookup } from "@/lib/reachouts-sheet";
 import { getSeSprintEntries, buildSeSprintLookup } from "@/lib/se-sprint-sheet";
+import { getSentimentByHubspotId } from "@/lib/pylon-sentiment";
 import AllBrandsPage from "@/components/AllBrandsPage";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  const [brands, caiEntries, reachoutEntries, seSprintEntries] = await Promise.all([getBrands(), getCaiReadyBrands(), getReachouts(), getSeSprintEntries()]);
+  const [brands, caiEntries, reachoutEntries, seSprintEntries, sentimentByHubspotId] = await Promise.all([
+    getBrands(),
+    getCaiReadyBrands(),
+    getReachouts(),
+    getSeSprintEntries(),
+    getSentimentByHubspotId().catch((e) => { console.error("getSentimentByHubspotId failed:", e); return new Map<string, string>(); }),
+  ]);
   const caiLookup = buildCaiLookup(caiEntries);
   const reachoutLookup = buildReachoutLookup(reachoutEntries);
   const seSprintLookup = buildSeSprintLookup(seSprintEntries);
@@ -18,6 +25,7 @@ export default async function Page() {
     return {
       ...b,
       CAI_IMPLEMENTATION_READY: caiLookup.get(normalize(b.BRAND_NAME)) ?? null,
+      PYLON_SENTIMENT: b.HUBSPOT_COMPANY_ID != null ? sentimentByHubspotId.get(String(b.HUBSPOT_COMPANY_ID)) ?? null : null,
       ON_REACHOUT_SHEET: reachout != null,
       REACHED_OUT: reachout?.emailed ?? null,
       REACHED_OUT_SEND_LABEL: reachout?.sendLabel ?? null,
