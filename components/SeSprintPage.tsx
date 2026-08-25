@@ -5,7 +5,7 @@ import { Brand } from "@/lib/metabase";
 import { SeSprintEntry } from "@/lib/se-sprint-sheet";
 import { ALL_COLUMNS } from "./Dashboard";
 import Sidebar from "./Sidebar";
-import { Rocket, X, ExternalLink } from "lucide-react";
+import { Rocket, X, ExternalLink, Trash2 } from "lucide-react";
 
 // A brand is in the SE Sprint queue once it's submitted the "Request for
 // Assisted FrontrowMD Implementation" form — regardless of whether it's
@@ -59,7 +59,7 @@ function Field({ label, value }: { label: string; value: string | null | undefin
 // headless/theme/notes/etc. — rather than the brand's general pipeline
 // status, SE/AM/Ops, or widget history (that's what BrandDetailPanel is
 // for, and it's not what an SE needs when working through this queue).
-function SprintRequestPanel({ brand, entry, onClose }: { brand: Brand; entry: SeSprintEntry | undefined; onClose: () => void }) {
+function SprintRequestPanel({ brand, entry, onClose, onRemove }: { brand: Brand; entry: SeSprintEntry | undefined; onClose: () => void; onRemove: () => void }) {
   const code = collaboratorCode(brand);
   const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
 
@@ -76,9 +76,17 @@ function SprintRequestPanel({ brand, entry, onClose }: { brand: Brand; entry: Se
           </div>
           <button onClick={onClose} style={{ color: "rgba(255,255,255,0.4)" }} className="hover:opacity-70"><X size={18} /></button>
         </div>
-        <a href={adminUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.75rem", color: "#72a4bf" }} className="flex items-center gap-1 hover:opacity-80">
-          Open in Admin <ExternalLink size={11} />
-        </a>
+        <div className="flex items-center gap-3 mb-1">
+          <a href={adminUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.75rem", color: "#72a4bf" }} className="flex items-center gap-1 hover:opacity-80">
+            Open in Admin <ExternalLink size={11} />
+          </a>
+          <button
+            onClick={() => { onRemove(); onClose(); }}
+            style={{ fontSize: "0.75rem", color: "#e05c5c" }}
+            className="flex items-center gap-1 hover:opacity-80">
+            <Trash2 size={11} /> Remove from SE Sprint
+          </button>
+        </div>
 
         <div className="mt-4" style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
           Implementation request
@@ -129,23 +137,57 @@ function SprintRequestPanel({ brand, entry, onClose }: { brand: Brand; entry: Se
 }
 
 export default function SeSprintPage({ initialBrands, entriesByBrandId }: { initialBrands: Brand[]; entriesByBrandId: Record<number, SeSprintEntry> }) {
-  const [brands] = useState(initialBrands);
+  const [brands, setBrands] = useState(initialBrands);
   const [codeFilter, setCodeFilter] = useState<"all" | "pending">("all");
+  const [seFilter, setSeFilter] = useState<string>("all");
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const queue = sprintBrands(brands);
   const pending = queue.filter((b) => !collaboratorCode(b));
-  const filtered = codeFilter === "pending" ? pending : queue;
+  const codeFiltered = codeFilter === "pending" ? pending : queue;
+  const seOptions = Array.from(new Set(queue.map((b) => b.SE_OWNER).filter((se): se is string => !!se))).sort();
+  const filtered = seFilter === "all" ? codeFiltered : codeFiltered.filter((b) => b.SE_OWNER === seFilter);
+
+  // Same override mechanism as the manual "add to SE Sprint" toggle on the
+  // main kanban cards (see Dashboard.tsx's toggleSeSprint) — SE_SPRINT_DISMISSED
+  // wins over both a real form submission and a manual add, so removing a
+  // brand here can't be silently undone by the sheet sync or the toggle.
+  async function removeBrand(brandId: number) {
+    setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, ON_SE_SPRINT_SHEET: false } : b)));
+    try {
+      const res = await fetch("/api/field-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, field: "SE_SPRINT_DISMISSED", value: "true" }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.errors?.join("; ") ?? "Save failed");
+    } catch (e) {
+      setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, ON_SE_SPRINT_SHEET: true } : b)));
+      alert(`Couldn't remove brand from SE Sprint: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 
   return (
     <div className="flex min-h-screen" style={{ background: "#0d1b26", color: "#fff" }}>
       <Sidebar active="se-sprint" />
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Header */}
-        <div className="px-8 py-5 flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-          <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff" }}>SE Sprint</h1>
-          <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>
-            Brands requesting assisted implementation — {queue.length} total
-          </p>
+        <div className="px-8 py-5 flex-shrink-0 flex items-start justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <div>
+            <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff" }}>SE Sprint</h1>
+            <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>
+              Brands requesting assisted implementation — {filtered.length} of {queue.length} shown
+            </p>
+          </div>
+          <select
+            value={seFilter}
+            onChange={(e) => setSeFilter(e.target.value)}
+            className="text-sm rounded-lg px-3 py-2 mt-1"
+            style={{ background: "rgba(255,255,255,0.07)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)", fontSize: "0.875rem" }}
+          >
+            <option value="all">All SEs</option>
+            {seOptions.map((se) => <option key={se} value={se}>{se}</option>)}
+          </select>
         </div>
 
         {/* Summary cards */}
@@ -176,14 +218,14 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
         <div className="flex-1 overflow-auto p-8">
           {filtered.length === 0 ? (
             <div className="text-center py-20" style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.95rem" }}>
-              No SE Sprint requests{codeFilter === "pending" ? " missing a collaborator code" : ""}.
+              No SE Sprint requests match the current filters.
             </div>
           ) : (
             <div className="rounded-xl overflow-hidden" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
               <table className="w-full">
                 <thead style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
                   <tr>
-                    {["Brand", "Status", "SE", "Submitted", "Collaborator code", "myshopify URL"].map((h) => (
+                    {["Brand", "Status", "SE", "Submitted", "Collaborator code", "myshopify URL", ""].map((h) => (
                       <th key={h} className="text-left px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
                     ))}
                   </tr>
@@ -222,6 +264,15 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
                             </a>
                           ) : (brand.SE_SPRINT_MYSHOPIFY_URL || "—")}
                         </td>
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => removeBrand(brand.BRAND_ID)}
+                            title="Remove from SE Sprint"
+                            style={{ color: "rgba(255,255,255,0.3)" }}
+                            className="hover:opacity-100 hover:text-red-400">
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -237,6 +288,7 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
           brand={selectedBrand}
           entry={entriesByBrandId[selectedBrand.BRAND_ID]}
           onClose={() => setSelectedBrand(null)}
+          onRemove={() => removeBrand(selectedBrand.BRAND_ID)}
         />
       )}
     </div>

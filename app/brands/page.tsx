@@ -21,7 +21,7 @@ export default async function Page() {
       ON_REACHOUT_SHEET: reachout != null,
       REACHED_OUT: reachout?.emailed ?? null,
       REACHED_OUT_SEND_LABEL: reachout?.sendLabel ?? null,
-      ON_SE_SPRINT_SHEET: b.ON_SE_SPRINT_SHEET || seSprint != null,
+      ON_SE_SPRINT_SHEET: !b.SE_SPRINT_DISMISSED && (b.ON_SE_SPRINT_SHEET || seSprint != null),
       SE_SPRINT_SUBMITTED_AT: seSprint?.timestamp ?? null,
       SE_SPRINT_MYSHOPIFY_URL: seSprint?.myshopifyUrl ?? null,
       SE_SPRINT_HAS_SHARED_CODE: seSprint?.hasSharedCode ?? null,
