@@ -150,6 +150,14 @@ export interface Brand {
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
   PYLON_SENTIMENT: string | null; // Pylon account's "Sentiment" custom field, matched by HUBSPOT_COMPANY_ID — null if no Pylon account or no sentiment set
   PYLON_LAST_COMMUNICATION_AT: string | null; // Pylon account's latest_customer_activity_time — null if no Pylon account or no activity on file
+  RECURLY_STATE: string | null; // Recurly subscription state ("active" | "future" | "expired" | "failed" | "paused" | ...) for the brand's most recent subscription — null if no Recurly account/subscription found
+  RECURLY_PLAN_NAME: string | null;
+  RECURLY_AMOUNT: number | null;
+  RECURLY_CURRENCY: string | null;
+  RECURLY_CURRENT_PERIOD_STARTED_AT: string | null;
+  RECURLY_CURRENT_PERIOD_ENDS_AT: string | null;
+  RECURLY_CURRENT_TERM_ENDS_AT: string | null;
+  RECURLY_AUTO_RENEW: boolean | null;
   ON_REACHOUT_SHEET: boolean; // true if the brand appears in any bucket on the email-reachouts sheet at all
   REACHED_OUT: boolean | null; // "Emailed?" from the email-reachouts sheet — null if not on the sheet, or listed but not yet marked Y/N
   REACHED_OUT_SEND_LABEL: string | null; // that bucket's send date/label, e.g. "Send 7/31" or "Send in Aug"
@@ -631,6 +639,14 @@ export async function getBrands(): Promise<Brand[]> {
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
       PYLON_SENTIMENT: null as string | null,
       PYLON_LAST_COMMUNICATION_AT: null as string | null,
+      RECURLY_STATE: null as string | null,
+      RECURLY_PLAN_NAME: null as string | null,
+      RECURLY_AMOUNT: null as number | null,
+      RECURLY_CURRENCY: null as string | null,
+      RECURLY_CURRENT_PERIOD_STARTED_AT: null as string | null,
+      RECURLY_CURRENT_PERIOD_ENDS_AT: null as string | null,
+      RECURLY_CURRENT_TERM_ENDS_AT: null as string | null,
+      RECURLY_AUTO_RENEW: null as boolean | null,
       ON_REACHOUT_SHEET: false,
       REACHED_OUT: null as boolean | null,
       REACHED_OUT_SEND_LABEL: null as string | null,

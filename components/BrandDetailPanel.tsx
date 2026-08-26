@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Brand, WIDGET_TYPE_LABELS, WidgetTypeStatus, isBrandStuck } from "@/lib/metabase";
 import { ALL_COLUMNS, ScheduledCall } from "./Dashboard";
-import { sentimentStyle } from "./BrandCard";
+import { sentimentStyle, recurlyStateStyle } from "./BrandCard";
 import { SE_INFO } from "@/lib/se-info";
 import { X, ExternalLink, CalendarPlus, Copy, Check, Pencil } from "lucide-react";
 
@@ -557,6 +557,33 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
               } />
             )}
           </div>
+
+          {/* Billing — the brand's most recent Recurly subscription. Absent
+              entirely if no Recurly account matched by brand name. */}
+          {brand.RECURLY_STATE && (
+            <div className="mb-6">
+              <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Billing</div>
+              <Row label="Status" value={
+                <span className="px-1.5 py-0.5 rounded text-xs font-semibold"
+                  style={{ background: recurlyStateStyle(brand.RECURLY_STATE).color + "26", color: recurlyStateStyle(brand.RECURLY_STATE).color }}>
+                  {recurlyStateStyle(brand.RECURLY_STATE).label}
+                </span>
+              } />
+              {brand.RECURLY_PLAN_NAME && <Row label="Plan" value={brand.RECURLY_PLAN_NAME} />}
+              {brand.RECURLY_AMOUNT != null && (
+                <Row label="Amount" value={`${brand.RECURLY_CURRENCY ?? "USD"} ${brand.RECURLY_AMOUNT.toLocaleString()}`} />
+              )}
+              {brand.RECURLY_CURRENT_PERIOD_ENDS_AT && (
+                <Row label="Current period ends" value={new Date(brand.RECURLY_CURRENT_PERIOD_ENDS_AT).toLocaleDateString()} />
+              )}
+              {brand.RECURLY_CURRENT_TERM_ENDS_AT && (
+                <Row label="Term ends" value={new Date(brand.RECURLY_CURRENT_TERM_ENDS_AT).toLocaleDateString()} />
+              )}
+              {brand.RECURLY_AUTO_RENEW != null && (
+                <Row label="Auto-renew" value={brand.RECURLY_AUTO_RENEW ? "Yes" : "No"} />
+              )}
+            </div>
+          )}
 
           {/* Products */}
           <div className="mb-6">

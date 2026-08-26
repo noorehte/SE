@@ -39,6 +39,21 @@ export function sentimentStyle(value: string): { label: string; color: string } 
   return SENTIMENT_STYLES[value] ?? { label: value, color: "#8a8a8a" };
 }
 
+// Recurly subscription state (lib/recurly.ts) — an open string in principle
+// (Recurly's own state machine has more values), but these are the ones
+// actually observed across the brand subscriptions as of Aug 2026.
+export const RECURLY_STATE_STYLES: Record<string, { label: string; color: string }> = {
+  active:    { label: "Active",    color: "#4caf82" },
+  future:    { label: "Future",    color: "#72a4bf" },
+  paused:    { label: "Paused",    color: "#e9a84c" },
+  canceled:  { label: "Canceled",  color: "#8a8a8a" },
+  expired:   { label: "Expired",   color: "#8a8a8a" },
+  failed:    { label: "Failed",    color: "#e05c5c" },
+};
+export function recurlyStateStyle(value: string): { label: string; color: string } {
+  return RECURLY_STATE_STYLES[value] ?? { label: value, color: "#8a8a8a" };
+}
+
 const OWNER_INITIALS: Record<string, string> = {
   maha: "MH", noor: "NR", naumaan: "NM",
   mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK",
