@@ -582,6 +582,14 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
               {brand.RECURLY_AUTO_RENEW != null && (
                 <Row label="Auto-renew" value={brand.RECURLY_AUTO_RENEW ? "Yes" : "No"} />
               )}
+              {brand.RECURLY_BILLING_PORTAL_URL && (
+                <Row label="Billing portal" value={
+                  <a href={brand.RECURLY_BILLING_PORTAL_URL} target="_blank" rel="noopener noreferrer"
+                    style={{ color: "#72a4bf" }} className="flex items-center gap-1 hover:opacity-80" title="Brand's self-service billing portal — sensitive, internal use only">
+                    Open <ExternalLink size={11} />
+                  </a>
+                } />
+              )}
             </div>
           )}
 

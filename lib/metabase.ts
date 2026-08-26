@@ -158,6 +158,7 @@ export interface Brand {
   RECURLY_CURRENT_PERIOD_ENDS_AT: string | null;
   RECURLY_CURRENT_TERM_ENDS_AT: string | null;
   RECURLY_AUTO_RENEW: boolean | null;
+  RECURLY_BILLING_PORTAL_URL: string | null; // brand-facing self-service billing link — treat as sensitive, see lib/recurly.ts
   ON_REACHOUT_SHEET: boolean; // true if the brand appears in any bucket on the email-reachouts sheet at all
   REACHED_OUT: boolean | null; // "Emailed?" from the email-reachouts sheet — null if not on the sheet, or listed but not yet marked Y/N
   REACHED_OUT_SEND_LABEL: string | null; // that bucket's send date/label, e.g. "Send 7/31" or "Send in Aug"
@@ -647,6 +648,7 @@ export async function getBrands(): Promise<Brand[]> {
       RECURLY_CURRENT_PERIOD_ENDS_AT: null as string | null,
       RECURLY_CURRENT_TERM_ENDS_AT: null as string | null,
       RECURLY_AUTO_RENEW: null as boolean | null,
+      RECURLY_BILLING_PORTAL_URL: null as string | null,
       ON_REACHOUT_SHEET: false,
       REACHED_OUT: null as boolean | null,
       REACHED_OUT_SEND_LABEL: null as string | null,

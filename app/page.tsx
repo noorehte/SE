@@ -44,6 +44,7 @@ export default async function Home() {
         RECURLY_CURRENT_PERIOD_ENDS_AT: recurly?.currentPeriodEndsAt ?? null,
         RECURLY_CURRENT_TERM_ENDS_AT: recurly?.currentTermEndsAt ?? null,
         RECURLY_AUTO_RENEW: recurly?.autoRenew ?? null,
+        RECURLY_BILLING_PORTAL_URL: recurly?.billingPortalUrl ?? null,
         ON_REACHOUT_SHEET: reachout != null,
         REACHED_OUT: reachout?.emailed ?? null,
         REACHED_OUT_SEND_LABEL: reachout?.sendLabel ?? null,

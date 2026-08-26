@@ -5,7 +5,7 @@ import { Brand } from "@/lib/metabase";
 import { recurlyStateStyle } from "./BrandCard";
 import Sidebar from "./Sidebar";
 import BrandDetailPanel from "./BrandDetailPanel";
-import { CreditCard } from "lucide-react";
+import { CreditCard, ExternalLink } from "lucide-react";
 
 // Every state actually seen in practice, in a sensible triage order — states
 // that need SE/AM attention first.
@@ -75,7 +75,7 @@ export default function BillingPage({ initialBrands }: { initialBrands: Brand[] 
               <table className="w-full">
                 <thead style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
                   <tr>
-                    {["Brand", "SE", "Status", "Plan", "Amount", "Current period ends", "Term ends", "Auto-renew"].map((h) => (
+                    {["Brand", "SE", "Status", "Plan", "Amount", "Current period ends", "Term ends", "Auto-renew", "Portal"].map((h) => (
                       <th key={h} className="text-left px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
                     ))}
                   </tr>
@@ -109,6 +109,15 @@ export default function BillingPage({ initialBrands }: { initialBrands: Brand[] 
                         </td>
                         <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.85rem" }}>
                           {brand.RECURLY_AUTO_RENEW == null ? "—" : brand.RECURLY_AUTO_RENEW ? "Yes" : "No"}
+                        </td>
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          {brand.RECURLY_BILLING_PORTAL_URL ? (
+                            <a href={brand.RECURLY_BILLING_PORTAL_URL} target="_blank" rel="noopener noreferrer"
+                              style={{ color: "#72a4bf" }} className="flex items-center gap-1 hover:opacity-80"
+                              title="Brand's self-service billing portal — sensitive, internal use only">
+                              Open <ExternalLink size={11} />
+                            </a>
+                          ) : "—"}
                         </td>
                       </tr>
                     );

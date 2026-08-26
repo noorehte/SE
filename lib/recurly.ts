@@ -13,16 +13,25 @@
 // plan plus a new one). The one with the most recent
 // current_period_started_at is treated as "the" subscription for display.
 //
-// Listing all subscriptions takes ~5 paginated calls (fewer, cheaper items
-// than Pylon's accounts listing) — still slow enough to cache rather than
-// run on every dashboard load. Mirrors lib/pylon-sentiment.ts: Vercel KV in
-// prod, a gitignored local JSON file in dev.
+// The billing-portal link is built from the account's hosted_login_token —
+// this is a live, passwordless auth token into the brand's own Recurly
+// self-service portal (view invoices, update payment method), so treat it
+// like a credential: fine for internal SE/AM use (viewing it here, or
+// sending it directly to the brand), but never log it or expose it outside
+// that context. It's on the /accounts endpoint, not embedded in
+// /subscriptions' account summary, so this does a second paginated fetch.
+//
+// Listing all subscriptions/accounts takes ~5 paginated calls each (fewer,
+// cheaper items than Pylon's accounts listing) — still slow enough to cache
+// rather than run on every dashboard load. Mirrors lib/pylon-sentiment.ts:
+// Vercel KV in prod, a gitignored local JSON file in dev.
 import { createClient, type VercelKV } from "@vercel/kv";
 import { readFile, writeFile } from "fs/promises";
 import path from "path";
 
 const RECURLY_BASE = "https://v3.recurly.com";
 const RECURLY_API_VERSION = "application/vnd.recurly.v2021-02-25";
+const RECURLY_SUBDOMAIN = "frontrowmd"; // from GET /sites — Frontrow's one Recurly site
 const CACHE_TTL_SECONDS = 10 * 60;
 const CACHE_KEY = "recurly-subscription-by-brand-name";
 
@@ -58,6 +67,17 @@ interface RecurlySubscriptionsPage {
   next?: string;
 }
 
+interface RecurlyAccount {
+  company?: string | null;
+  hosted_login_token?: string | null;
+}
+
+interface RecurlyAccountsPage {
+  data?: RecurlyAccount[];
+  has_more?: boolean;
+  next?: string;
+}
+
 export interface RecurlySubscriptionData {
   state: string;
   planName: string | null;
@@ -67,17 +87,18 @@ export interface RecurlySubscriptionData {
   currentPeriodEndsAt: string | null;
   currentTermEndsAt: string | null;
   autoRenew: boolean | null;
+  billingPortalUrl: string | null; // brand-facing self-service link — see file header re: sensitivity
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function fetchSubscriptionsPage(url: string, attempt = 1): Promise<RecurlySubscriptionsPage> {
+async function fetchPage<T>(url: string, attempt = 1): Promise<{ data?: T[]; has_more?: boolean; next?: string }> {
   const res = await fetch(url, { headers: headers(), cache: "no-store" });
   if (res.status === 429 && attempt <= 5) {
     await sleep(2000 * attempt);
-    return fetchSubscriptionsPage(url, attempt + 1);
+    return fetchPage<T>(url, attempt + 1);
   }
-  return (await res.json().catch(() => ({}))) as RecurlySubscriptionsPage;
+  return (await res.json().catch(() => ({}))) as { data?: T[]; has_more?: boolean; next?: string };
 }
 
 /** lowercase, punctuation-stripped — same normalization used for the other sheet-based brand lookups in this app */
@@ -85,11 +106,11 @@ function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-async function fetchAllFromRecurly(): Promise<Record<string, RecurlySubscriptionData>> {
+async function fetchSubscriptionsByBrandName(): Promise<Record<string, RecurlySubscriptionData>> {
   const result: Record<string, RecurlySubscriptionData> = {};
   let url = `${RECURLY_BASE}/subscriptions?limit=200`;
   for (let page = 0; page < 20; page++) {
-    const data = await fetchSubscriptionsPage(url);
+    const data = await fetchPage<RecurlySubscription>(url);
     for (const sub of data.data ?? []) {
       const company = sub.account?.company;
       if (!company) continue;
@@ -109,12 +130,43 @@ async function fetchAllFromRecurly(): Promise<Record<string, RecurlySubscription
         currentPeriodEndsAt: sub.current_period_ends_at ?? null,
         currentTermEndsAt: sub.current_term_ends_at ?? null,
         autoRenew: sub.auto_renew ?? null,
+        billingPortalUrl: existing?.billingPortalUrl ?? null,
       };
     }
     if (!data.has_more || !data.next) break;
     url = `${RECURLY_BASE}${data.next}`;
   }
   return result;
+}
+
+async function fetchPortalTokensByBrandName(): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  let url = `${RECURLY_BASE}/accounts?limit=200`;
+  for (let page = 0; page < 20; page++) {
+    const data = await fetchPage<RecurlyAccount>(url);
+    for (const account of data.data ?? []) {
+      const company = account.company;
+      const token = account.hosted_login_token;
+      if (!company || !token) continue;
+      const key = normalize(company);
+      if (key) result[key] = token;
+    }
+    if (!data.has_more || !data.next) break;
+    url = `${RECURLY_BASE}${data.next}`;
+  }
+  return result;
+}
+
+async function fetchAllFromRecurly(): Promise<Record<string, RecurlySubscriptionData>> {
+  const [subscriptions, portalTokens] = await Promise.all([
+    fetchSubscriptionsByBrandName(),
+    fetchPortalTokensByBrandName(),
+  ]);
+  for (const [key, sub] of Object.entries(subscriptions)) {
+    const token = portalTokens[key];
+    if (token) sub.billingPortalUrl = `https://${RECURLY_SUBDOMAIN}.recurly.com/account/${token}`;
+  }
+  return subscriptions;
 }
 
 // Mirror lib/followups/state.ts / lib/pylon-sentiment.ts: Vercel KV when

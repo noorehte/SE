@@ -22,6 +22,7 @@ export default async function Page() {
       RECURLY_CURRENT_PERIOD_ENDS_AT: recurly?.currentPeriodEndsAt ?? null,
       RECURLY_CURRENT_TERM_ENDS_AT: recurly?.currentTermEndsAt ?? null,
       RECURLY_AUTO_RENEW: recurly?.autoRenew ?? null,
+      RECURLY_BILLING_PORTAL_URL: recurly?.billingPortalUrl ?? null,
     };
   });
   return <BillingPage initialBrands={enriched} />;
