@@ -25,6 +25,35 @@ export const SEGMENT_STYLES: Record<string, { label: string; color: string }> = 
   mid_market:  { label: "Mid-Market",  color: "#fbbf24" },
 };
 
+// Pylon account "Sentiment" custom field — an open string in principle (see
+// lib/pylon-sentiment.ts), but these are the values actually in use as of
+// Aug 2026. An unrecognized value still renders, just in a neutral gray.
+export const SENTIMENT_STYLES: Record<string, { label: string; color: string }> = {
+  positive:             { label: "Positive",     color: "#4caf82" },
+  advocate:             { label: "Advocate",      color: "#8b7fe8" },
+  neutral:              { label: "Neutral",       color: "#72a4bf" },
+  frustrated:           { label: "Frustrated",    color: "#e9a84c" },
+  high_risk_detractor:  { label: "High Risk",     color: "#e05c5c" },
+};
+export function sentimentStyle(value: string): { label: string; color: string } {
+  return SENTIMENT_STYLES[value] ?? { label: value, color: "#8a8a8a" };
+}
+
+// Recurly subscription state (lib/recurly.ts) — an open string in principle
+// (Recurly's own state machine has more values), but these are the ones
+// actually observed across the brand subscriptions as of Aug 2026.
+export const RECURLY_STATE_STYLES: Record<string, { label: string; color: string }> = {
+  active:    { label: "Active",    color: "#4caf82" },
+  future:    { label: "Future",    color: "#72a4bf" },
+  paused:    { label: "Paused",    color: "#e9a84c" },
+  canceled:  { label: "Canceled",  color: "#8a8a8a" },
+  expired:   { label: "Expired",   color: "#8a8a8a" },
+  failed:    { label: "Failed",    color: "#e05c5c" },
+};
+export function recurlyStateStyle(value: string): { label: string; color: string } {
+  return RECURLY_STATE_STYLES[value] ?? { label: value, color: "#8a8a8a" };
+}
+
 const OWNER_INITIALS: Record<string, string> = {
   maha: "MH", noor: "NR", naumaan: "NM",
   mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK",
@@ -146,13 +175,14 @@ function AbTestingSection({
 }
 
 export default function BrandCard({
-  brand, accent, scheduledCall, showAbTesting = false, onToggleAbTesting,
+  brand, accent, scheduledCall, showAbTesting = false, onToggleAbTesting, onToggleSeSprint,
 }: {
   brand: Brand;
   accent: string;
   scheduledCall: ScheduledCall | null;
   showAbTesting?: boolean;
   onToggleAbTesting?: (brandId: number, newValue: boolean) => void;
+  onToggleSeSprint?: (brandId: number, next: boolean) => void;
 }) {
   const [shareCountsExpanded, setShareCountsExpanded] = useState(false);
   const isStuck = isBrandStuck(brand);
@@ -259,6 +289,46 @@ export default function BrandCard({
           </span>
         </div>
       )}
+
+      {/* Pylon sentiment badge — matched to the brand's Pylon account by
+          HubSpot company id; absent for brands with no Pylon account or no
+          sentiment set there. */}
+      {brand.PYLON_SENTIMENT && (
+        <div className="mt-1.5">
+          <span className="px-1.5 py-0.5 rounded text-xs font-semibold"
+            style={{
+              background: sentimentStyle(brand.PYLON_SENTIMENT).color + "26",
+              color: sentimentStyle(brand.PYLON_SENTIMENT).color,
+              fontSize: "0.68rem",
+            }}>
+            {sentimentStyle(brand.PYLON_SENTIMENT).label}
+          </span>
+        </div>
+      )}
+
+      {/* SE Sprint queue badge/toggle — brands land here either via the
+          "Request for Assisted Implementation" form or by being added by
+          hand. Once on, it's shown as a plain badge (not a button) since
+          clicking it off here would only clear a manual add, never a real
+          form submission, which would be a confusing thing to expose as a
+          toggle right on the card. */}
+      {brand.ON_SE_SPRINT_SHEET ? (
+        <div className="mt-1.5">
+          <span className="px-1.5 py-0.5 rounded text-xs font-semibold" style={{ background: "rgba(233,168,76,0.15)", color: "#e9a84c", fontSize: "0.68rem" }}>
+            🚀 SE Sprint
+          </span>
+        </div>
+      ) : onToggleSeSprint ? (
+        <div className="mt-1.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleSeSprint(brand.BRAND_ID, true); }}
+            title="Add to SE Sprint queue"
+            className="px-1.5 py-0.5 rounded text-xs font-semibold hover:opacity-80"
+            style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.4)", fontSize: "0.68rem" }}>
+            + SE Sprint
+          </button>
+        </div>
+      ) : null}
 
       {scheduledCall && (
         <div className="flex items-center gap-1.5 mt-2" style={{ fontSize: "0.75rem", color: "#4caf82" }}>

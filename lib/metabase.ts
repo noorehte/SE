@@ -1,5 +1,5 @@
 import { getAllOverrides, OverrideEntry } from "@/lib/overrides";
-import { getHubSpotOwnerChecksByCompanyId, getCloseDatesByCompanyId } from "@/lib/hubspot";
+import { getHubSpotOwnerChecksByCompanyId, getCloseDatesByCompanyId, normalizeOwnerName } from "@/lib/hubspot";
 
 async function metabaseQuery(tableId: number, fields?: number[], filters?: unknown[], limit?: number) {
   // Read at request time — module-level access gets baked in as undefined for Sensitive vars
@@ -155,9 +155,27 @@ export interface Brand {
   // null if the brand has no published, non-discarded product with a URL.
   TOP_PDP: { name: string; url: string; badgeLive: boolean; reviewsLive: boolean; caiLive: boolean } | null;
   PDP_COUNT: number; // published, non-discarded products with a page URL
+  PYLON_SENTIMENT: string | null; // Pylon account's "Sentiment" custom field, matched by HUBSPOT_COMPANY_ID — null if no Pylon account or no sentiment set
+  PYLON_LAST_COMMUNICATION_AT: string | null; // Pylon account's latest_customer_activity_time — null if no Pylon account or no activity on file
+  RECURLY_STATE: string | null; // Recurly subscription state ("active" | "future" | "expired" | "failed" | "paused" | ...) for the brand's most recent subscription — null if no Recurly account/subscription found
+  RECURLY_PLAN_NAME: string | null;
+  RECURLY_AMOUNT: number | null;
+  RECURLY_CURRENCY: string | null;
+  RECURLY_CURRENT_PERIOD_STARTED_AT: string | null;
+  RECURLY_CURRENT_PERIOD_ENDS_AT: string | null;
+  RECURLY_CURRENT_TERM_ENDS_AT: string | null;
+  RECURLY_AUTO_RENEW: boolean | null;
+  RECURLY_BILLING_PORTAL_URL: string | null; // brand-facing self-service billing link — treat as sensitive, see lib/recurly.ts
   ON_REACHOUT_SHEET: boolean; // true if the brand appears in any bucket on the email-reachouts sheet at all
   REACHED_OUT: boolean | null; // "Emailed?" from the email-reachouts sheet — null if not on the sheet, or listed but not yet marked Y/N
   REACHED_OUT_SEND_LABEL: string | null; // that bucket's send date/label, e.g. "Send 7/31" or "Send in Aug"
+  ON_SE_SPRINT_SHEET: boolean; // true if the brand submitted the "Request for Assisted Implementation" form (or was added manually), and hasn't been dismissed from the queue
+  SE_SPRINT_SUBMITTED_AT: string | null; // raw form Timestamp text, or null if not on the sheet
+  SE_SPRINT_MYSHOPIFY_URL: string | null;
+  SE_SPRINT_HAS_SHARED_CODE: string | null; // raw "Yes" / "No" / "Unsure" from the form
+  SE_SPRINT_COLLABORATOR_CODE: string | null; // code the brand typed into the form itself
+  SE_SPRINT_MYSHOPIFY_URL_OVERRIDE: string | null; // SE-corrected myshopify domain — wins over what the brand typed into the form
+  SE_SPRINT_DISMISSED: boolean; // manually removed from the SE Sprint queue — wins over both the form and a manual add
   ONBOARDING_CHANNEL: "in_app" | "external" | null; // "in_app" = onboarded via Brand Portal (and has portal access)
   REVIEWS_DELIVERED: number;
   BADGE_READY_DATE: string | null;
@@ -174,11 +192,6 @@ export interface Brand {
   // losing that real status, so it lands back in the right column once removed.
   AB_TESTING: boolean;
   AB_TESTING_NOTES: string | null;
-  // Pylon's Account-level "Sentiment" custom field (e.g. "advocate", "positive",
-  // "neutral", "frustrated", "high_risk_detractor") — not queryable from
-  // Metabase, so getBrands() always returns null here; populated by whichever
-  // page enriches brands with Pylon data (see lib/pylon-sentiment.ts).
-  PYLON_SENTIMENT: string | null;
 }
 
 // "Stuck" means sitting too long in a status that still needs SE action.
@@ -691,9 +704,13 @@ export async function getBrands(): Promise<Brand[]> {
       // Lowest-priority fallback on all three: HubSpot's own value, read
       // straight from the CRM, only kicks in when Metabase has nothing —
       // Notion overrides and the onboarding portal still always win.
-      SE_OWNER: f.SE_OWNER ?? onboarding?.SE_OWNER ?? stg.SE_OWNER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.seOwner ?? null,
-      OPS_OWNER: f.OPS_OWNER ?? onboarding?.OPS_OWNER ?? stg.OPS_OWNER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.opsOwner ?? null,
-      ACCOUNT_MANAGER: f.ACCOUNT_MANAGER ?? onboarding?.ACCOUNT_MANAGER ?? stg.ACCOUNT_MANAGER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.accountManager ?? null,
+      // Normalized because these sources disagree on shape — Notion/Metabase
+      // tend to hold our internal shortname ("maha") while HubSpot's Owners
+      // API returns "firstName lastName" ("Maha Awaisi") — and filtering by
+      // shortname needs one consistent form to match against.
+      SE_OWNER: normalizeOwnerName(f.SE_OWNER ?? onboarding?.SE_OWNER ?? stg.SE_OWNER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.seOwner ?? null),
+      OPS_OWNER: normalizeOwnerName(f.OPS_OWNER ?? onboarding?.OPS_OWNER ?? stg.OPS_OWNER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.opsOwner ?? null),
+      ACCOUNT_MANAGER: normalizeOwnerName(f.ACCOUNT_MANAGER ?? onboarding?.ACCOUNT_MANAGER ?? stg.ACCOUNT_MANAGER ?? hubspotOwnerCheck(stg.HUBSPOT_COMPANY_ID)?.accountManager ?? null),
       BD_REP: f.BD_REP ?? onboarding?.BD_REP ?? null,
       BRAND_CREATED_AT: onboarding?.BRAND_CREATED_AT ?? stg.CREATED_AT,
       ANY_ADMIN_LAST_SIGNED_IN_AT: onboarding?.ANY_ADMIN_LAST_SIGNED_IN_AT ?? null,
@@ -721,11 +738,33 @@ export async function getBrands(): Promise<Brand[]> {
       WIDGET_STATUSES: widgetStatusByBrand.get(brandId) ?? {},
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
       PYLON_SENTIMENT: null as string | null,
+      PYLON_LAST_COMMUNICATION_AT: null as string | null,
+      RECURLY_STATE: null as string | null,
+      RECURLY_PLAN_NAME: null as string | null,
+      RECURLY_AMOUNT: null as number | null,
+      RECURLY_CURRENCY: null as string | null,
+      RECURLY_CURRENT_PERIOD_STARTED_AT: null as string | null,
+      RECURLY_CURRENT_PERIOD_ENDS_AT: null as string | null,
+      RECURLY_CURRENT_TERM_ENDS_AT: null as string | null,
+      RECURLY_AUTO_RENEW: null as boolean | null,
+      RECURLY_BILLING_PORTAL_URL: null as string | null,
       TOP_PDP: topPdpByBrand.get(brandId) ?? null,
       PDP_COUNT: pdpCountByBrand.get(brandId) ?? 0,
       ON_REACHOUT_SHEET: false,
       REACHED_OUT: null as boolean | null,
       REACHED_OUT_SEND_LABEL: null as string | null,
+      // Overlaid with the form-response sheet's value in app/page.tsx et al —
+      // this manual override just means "added by hand," so it's OR'd with
+      // (never replaced by) the sheet lookup rather than the sheet's usual
+      // override-wins precedence, since removing/re-adding a form row
+      // shouldn't be able to silently undo a manual add.
+      ON_SE_SPRINT_SHEET: f.ON_SE_SPRINT_SHEET === "true",
+      SE_SPRINT_SUBMITTED_AT: null as string | null,
+      SE_SPRINT_MYSHOPIFY_URL: null as string | null,
+      SE_SPRINT_HAS_SHARED_CODE: null as string | null,
+      SE_SPRINT_COLLABORATOR_CODE: null as string | null,
+      SE_SPRINT_MYSHOPIFY_URL_OVERRIDE: f.SE_SPRINT_MYSHOPIFY_URL_OVERRIDE || null,
+      SE_SPRINT_DISMISSED: f.SE_SPRINT_DISMISSED === "true",
       ONBOARDING_CHANNEL: onboardingChannelByBrand.get(brandId) ?? null,
       REVIEWS_DELIVERED: reviewsDeliveredByBrand.get(brandId) ?? 0,
       BADGE_READY_DATE: readyDatesByBrand.get(brandId)?.badge ?? null,

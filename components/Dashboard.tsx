@@ -3,7 +3,7 @@
 import { useState, useRef, Fragment } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
 import { BadgeStatus, ExecStatus, getBadgeStatus, getExecStatus, getExecStatusDetail, getRegressedParts, getReadyDate, EXEC_STATUS_ORDER, EXEC_STATUS_STYLES, EXEC_STATUS_DISPLAY_ORDER } from "@/lib/liveStatus";
-import BrandCard, { SEGMENT_STYLES, AbTestingToggle } from "./BrandCard";
+import BrandCard, { SEGMENT_STYLES, AbTestingToggle, SENTIMENT_STYLES } from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
 import ExecOverview from "./ExecOverview";
 import { Download, LayoutGrid, List, RefreshCw, Search, Columns3, ArrowDownWideNarrow, ArrowUpNarrowWide, Briefcase, Gauge } from "lucide-react";
@@ -61,7 +61,7 @@ const AB_TESTING_COLUMN: { id: KanbanColumnId; label: string; accent: string } =
   id: "ab_testing", label: "A/B Testing", accent: "#e879a8",
 };
 
-const SE_OWNERS = ["maha", "noor", "naumaan"];
+const SE_OWNERS = ["maha", "noor", "naumaan", "andres"];
 
 function csvCell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
@@ -138,6 +138,11 @@ function exportExecOverviewCsv(brands: Brand[], scheduledCalls: Record<string, S
 // each card, so "Strategic" here means exactly what the colored chip means.
 const SEGMENTS = Object.keys(SEGMENT_STYLES);
 
+// Same idea for Pylon sentiment — same keys/labels BrandCard uses for the
+// sentiment badge. Brands with no Pylon sentiment data are simply excluded
+// when a specific sentiment is selected (no "unknown" bucket).
+const SENTIMENTS = Object.keys(SENTIMENT_STYLES);
+
 // A brand "needs outreach" if it's sitting in a status where the next step is
 // literally an SE call (a fresh onboarding call, or a re-engagement call for
 // a brand that went inactive) and nothing's on the books for them yet.
@@ -178,6 +183,7 @@ export default function Dashboard({
   const [view, setView] = useState<"kanban" | "table" | "widgets" | "exec" | "leadership">(hideKanbanTable ? "leadership" : "kanban");
   const [seFilter, setSeFilter] = useState<string>("all");
   const [segmentFilter, setSegmentFilter] = useState<string>("all");
+  const [sentimentFilter, setSentimentFilter] = useState<string>("all");
   const [columnFilter, setColumnFilter] = useState<KanbanColumnId | null>(null);
   const [statFilter, setStatFilter] = useState<"all" | "in_progress" | "stuck" | "live" | "needs_outreach">("all");
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
@@ -211,9 +217,13 @@ export default function Dashboard({
   const segmentMatched = segmentFilter === "all"
     ? seFiltered
     : seFiltered.filter((b) => b.KIND?.toLowerCase() === segmentFilter);
+
+  const sentimentMatched = sentimentFilter === "all"
+    ? segmentMatched
+    : segmentMatched.filter((b) => b.PYLON_SENTIMENT === sentimentFilter);
   // Stat cards/table stay churn-free; the Kanban board's Churned column
-  // (kanbanBrands below) uses segmentMatched directly, before this split.
-  const segmentFiltered = segmentMatched.filter((b) => b.PIPELINE_STATUS !== "churned");
+  // (kanbanBrands below) uses sentimentMatched directly, before this split.
+  const segmentFiltered = sentimentMatched.filter((b) => b.PIPELINE_STATUS !== "churned");
 
   const statFiltered = statFilter === "all" ? segmentFiltered
     : statFilter === "in_progress" ? segmentFiltered.filter(b => !["live", "was_live"].includes(b.PIPELINE_STATUS))
@@ -250,9 +260,9 @@ export default function Dashboard({
   // The Kanban board always shows a Churned column alongside the other
   // (non-churned) columns, regardless of View all — unlike the stat cards
   // and table, which stay churn-free so "Total brands" etc. aren't skewed.
-  // Built off segmentMatched (search/SE/segment applied, churned brands
-  // still included) rather than `filtered`, since stat/widget/date filters
-  // don't apply meaningfully to a brand that's no longer active.
+  // Built off sentimentMatched (search/SE/segment/sentiment applied, churned
+  // brands still included) rather than `filtered`, since stat/widget/date
+  // filters don't apply meaningfully to a brand that's no longer active.
   const churnedColumn = ALL_COLUMNS.find((c) => c.id === "churned")!;
   // A/B Testing sits right after Collaborator Code Brand rather than at the
   // end — found by id rather than a fixed index, since activeColumns' shape
@@ -263,7 +273,7 @@ export default function Dashboard({
     const insertAt = collabIdx === -1 ? activeColumns.length : collabIdx + 1;
     return [...activeColumns.slice(0, insertAt), AB_TESTING_COLUMN, ...activeColumns.slice(insertAt), churnedColumn];
   })();
-  const churnedBrands = segmentMatched.filter((b) => b.PIPELINE_STATUS === "churned");
+  const churnedBrands = sentimentMatched.filter((b) => b.PIPELINE_STATUS === "churned");
   const kanbanBrands = [...filtered, ...churnedBrands];
 
   const visibleBrands = columnFilter
@@ -371,6 +381,32 @@ export default function Dashboard({
     }
   }
 
+  // Manual "add to SE Sprint" toggle — stored as a Notion field override
+  // (ON_SE_SPRINT_SHEET) alongside the form-synced value (see app/page.tsx),
+  // so it's additive: turning this on never gets clobbered by a later sheet
+  // sync, and turning it off only clears the manual add, not a genuine form
+  // submission (form-driven brands can't be un-toggled here; see the "on
+  // sheet, not manually added" guard in BrandCard's disabled state).
+  async function toggleSeSprint(brandId: number, next: boolean) {
+    setBrands((prev) =>
+      prev.map((b) => (b.BRAND_ID === brandId ? { ...b, ON_SE_SPRINT_SHEET: next } : b))
+    );
+    try {
+      const res = await fetch("/api/field-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, field: "ON_SE_SPRINT_SHEET", value: next ? "true" : "" }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.errors?.join("; ") ?? "Save failed");
+    } catch (e) {
+      setBrands((prev) =>
+        prev.map((b) => (b.BRAND_ID === brandId ? { ...b, ON_SE_SPRINT_SHEET: !next } : b))
+      );
+      alert(`Couldn't save SE Sprint change: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   return (
     <div className="flex min-h-screen" style={{ background: "#0d1b26", color: "#fff" }}>
       <Sidebar active={activeNavKey} />
@@ -427,8 +463,8 @@ export default function Dashboard({
                 style={{ color: dateTo ? "#fff" : "rgba(255,255,255,0.4)", fontSize: "0.8rem", colorScheme: "dark" }}
               />
             </div>
-            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search || dateFrom || dateTo || segmentFilter !== "all") && (
-              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); setDateFrom(""); setDateTo(""); setSegmentFilter("all"); }}
+            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search || dateFrom || dateTo || segmentFilter !== "all" || sentimentFilter !== "all") && (
+              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); setDateFrom(""); setDateTo(""); setSegmentFilter("all"); setSentimentFilter("all"); }}
                 className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
                 ✕ Clear filter
@@ -442,6 +478,15 @@ export default function Dashboard({
             >
               <option value="all">All Segments</option>
               {SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_STYLES[s].label}</option>)}
+            </select>
+            <select
+              value={sentimentFilter}
+              onChange={(e) => setSentimentFilter(e.target.value)}
+              className="text-sm rounded-lg px-3 py-2"
+              style={{ background: "rgba(255,255,255,0.07)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)", fontSize: "0.875rem" }}
+            >
+              <option value="all">All Sentiment</option>
+              {SENTIMENTS.map((s) => <option key={s} value={s}>{SENTIMENT_STYLES[s].label}</option>)}
             </select>
             <select
               value={seFilter}
@@ -573,6 +618,7 @@ export default function Dashboard({
               onCardClick={setSelectedBrand}
               onHeaderClick={toggleColumnFilter}
               onToggleAbTesting={toggleAbTesting}
+              onToggleSeSprint={toggleSeSprint}
             />
           ) : view === "table" ? (
             <TableView brands={visibleBrands} columns={activeColumns} scheduledCalls={scheduledCalls} onMove={moveBrand} onRowClick={setSelectedBrand} />
@@ -627,6 +673,7 @@ function KanbanView({
   onCardClick,
   onHeaderClick,
   onToggleAbTesting,
+  onToggleSeSprint,
 }: {
   brands: Brand[];
   columns: { id: KanbanColumnId; label: string; accent: string }[];
@@ -636,6 +683,7 @@ function KanbanView({
   onCardClick: (brand: Brand) => void;
   onHeaderClick: (id: KanbanColumnId) => void;
   onToggleAbTesting: (brandId: number, newValue: boolean) => void;
+  onToggleSeSprint: (brandId: number, next: boolean) => void;
 }) {
   const dragBrandId = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<KanbanColumnId | null>(null);
@@ -718,7 +766,7 @@ function KanbanView({
                   onClick={() => onCardClick(brand)}
                   className="cursor-pointer active:cursor-grabbing"
                   style={{ cursor: "grab" }}>
-                  <BrandCard brand={brand} accent={col.accent} scheduledCall={scheduledCalls[String(brand.BRAND_ID)] ?? null} showAbTesting={showAbTesting} onToggleAbTesting={onToggleAbTesting} />
+                  <BrandCard brand={brand} accent={col.accent} scheduledCall={scheduledCalls[String(brand.BRAND_ID)] ?? null} showAbTesting={showAbTesting} onToggleAbTesting={onToggleAbTesting} onToggleSeSprint={onToggleSeSprint} />
                 </div>
               ))}
               {colBrands.length === 0 && (

@@ -3,14 +3,15 @@
 import { useState, useEffect } from "react";
 import { Brand, WIDGET_TYPE_LABELS, WidgetTypeStatus, isBrandStuck } from "@/lib/metabase";
 import { ALL_COLUMNS, ScheduledCall } from "./Dashboard";
+import { sentimentStyle, recurlyStateStyle } from "./BrandCard";
 import { SE_INFO } from "@/lib/se-info";
 import { X, ExternalLink, CalendarPlus, Copy, Check, Pencil } from "lucide-react";
 
 const OWNER_INITIALS: Record<string, string> = {
   maha: "MH", noor: "NR", naumaan: "NM",
-  mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK",
+  mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK", andres: "AB",
 };
-const OWNER_OPTIONS = ["maha", "noor", "naumaan", "mohammad", "kean", "jean", "zeke"];
+const OWNER_OPTIONS = ["maha", "noor", "naumaan", "mohammad", "kean", "jean", "zeke", "andres"];
 // Only SEs with a Google-connected calendar can have a call scheduled on their
 // behalf — this is deliberately narrower than OWNER_OPTIONS above.
 const SCHEDULABLE_SES = Object.keys(SE_INFO);
@@ -65,6 +66,10 @@ function Avatar({ name, title }: { name: string | null; title: string }) {
       </div>
     </div>
   );
+}
+
+function daysAgo(iso: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -212,7 +217,7 @@ function EditableSelect({
   );
 }
 
-function EditableText({
+export function EditableText({
   brandId, field, label, value, hubspotCompanyId, onSaved,
 }: { brandId: number; field: string; label: string; value: string | null; hubspotCompanyId?: number | null; onSaved?: (field: string, value: string) => void }) {
   const [editing, setEditing] = useState(false);
@@ -267,6 +272,48 @@ function EditableText({
 // Follow-up controls: a scheduled one-off date (brand said "not ready until X")
 // and a hard disable switch. Both persist as field overrides (Notion only — no
 // hubspotCompanyId passed, so nothing is written to HubSpot).
+function SeSprintControl({ brand, onBrandUpdate }: {
+  brand: Brand;
+  onBrandUpdate?: (brandId: number, updates: Partial<Brand>) => void;
+}) {
+  const [onSprint, setOnSprint] = useState(brand.ON_SE_SPRINT_SHEET);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fromForm = brand.SE_SPRINT_SUBMITTED_AT != null;
+
+  async function toggle() {
+    const next = !onSprint;
+    setOnSprint(next); setBusy(true); setErr(null);
+    const e = await saveFieldOverride(brand.BRAND_ID, "ON_SE_SPRINT_SHEET", next ? "true" : "");
+    if (e) { setErr(e); setOnSprint(!next); } else { onBrandUpdate?.(brand.BRAND_ID, { ON_SE_SPRINT_SHEET: next }); }
+    setBusy(false);
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <div style={{ fontSize: "0.8rem", color: "#fff" }}>{onSprint ? "On SE Sprint queue" : "Not on SE Sprint queue"}</div>
+        <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.4)" }}>
+          {fromForm ? `Submitted the request form (${brand.SE_SPRINT_SUBMITTED_AT})` : "Added manually"}
+        </div>
+        {err && <div style={{ fontSize: "0.7rem", color: "#e05c5c", marginTop: "2px" }}>{err}</div>}
+      </div>
+      <button
+        onClick={toggle}
+        disabled={busy || (onSprint && fromForm)}
+        title={onSprint && fromForm ? "This brand submitted the request form — remove it from the sheet to take it off the queue" : undefined}
+        className="px-3 py-1.5 rounded-lg hover:opacity-80 transition-opacity disabled:opacity-40"
+        style={{
+          background: onSprint ? "rgba(224,92,92,0.12)" : "rgba(233,168,76,0.12)",
+          color: onSprint ? "#e05c5c" : "#e9a84c",
+          fontSize: "0.8rem", border: "none", cursor: busy || (onSprint && fromForm) ? "default" : "pointer", flexShrink: 0,
+        }}>
+        {onSprint ? "Remove from queue" : "Add to queue"}
+      </button>
+    </div>
+  );
+}
+
 function FollowupControls({ brand, onBrandUpdate }: {
   brand: Brand;
   onBrandUpdate?: (brandId: number, updates: Partial<Brand>) => void;
@@ -496,7 +543,55 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
             <Row label="Days in status" value={<span style={{ color: isStuck ? "#e05c5c" : "#fff" }}>{brand.DAYS_IN_STATUS}d</span>} />
             <Row label="Created" value={new Date(brand.BRAND_CREATED_AT).toLocaleDateString()} />
             <Row label="Last sign-in" value={brand.ANY_ADMIN_LAST_SIGNED_IN_AT ? new Date(brand.ANY_ADMIN_LAST_SIGNED_IN_AT).toLocaleDateString() : "Never"} />
+            {brand.PYLON_SENTIMENT && (
+              <Row label="Pylon sentiment" value={
+                <span className="px-1.5 py-0.5 rounded text-xs font-semibold"
+                  style={{ background: sentimentStyle(brand.PYLON_SENTIMENT).color + "26", color: sentimentStyle(brand.PYLON_SENTIMENT).color }}>
+                  {sentimentStyle(brand.PYLON_SENTIMENT).label}
+                </span>
+              } />
+            )}
+            {brand.PYLON_LAST_COMMUNICATION_AT && (
+              <Row label="Last communication" value={
+                `${new Date(brand.PYLON_LAST_COMMUNICATION_AT).toLocaleDateString()} (${daysAgo(brand.PYLON_LAST_COMMUNICATION_AT)}d ago)`
+              } />
+            )}
           </div>
+
+          {/* Billing — the brand's most recent Recurly subscription. Absent
+              entirely if no Recurly account matched by brand name. */}
+          {brand.RECURLY_STATE && (
+            <div className="mb-6">
+              <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Billing</div>
+              <Row label="Status" value={
+                <span className="px-1.5 py-0.5 rounded text-xs font-semibold"
+                  style={{ background: recurlyStateStyle(brand.RECURLY_STATE).color + "26", color: recurlyStateStyle(brand.RECURLY_STATE).color }}>
+                  {recurlyStateStyle(brand.RECURLY_STATE).label}
+                </span>
+              } />
+              {brand.RECURLY_PLAN_NAME && <Row label="Plan" value={brand.RECURLY_PLAN_NAME} />}
+              {brand.RECURLY_AMOUNT != null && (
+                <Row label="Amount" value={`${brand.RECURLY_CURRENCY ?? "USD"} ${brand.RECURLY_AMOUNT.toLocaleString()}`} />
+              )}
+              {brand.RECURLY_CURRENT_PERIOD_ENDS_AT && (
+                <Row label="Current period ends" value={new Date(brand.RECURLY_CURRENT_PERIOD_ENDS_AT).toLocaleDateString()} />
+              )}
+              {brand.RECURLY_CURRENT_TERM_ENDS_AT && (
+                <Row label="Term ends" value={new Date(brand.RECURLY_CURRENT_TERM_ENDS_AT).toLocaleDateString()} />
+              )}
+              {brand.RECURLY_AUTO_RENEW != null && (
+                <Row label="Auto-renew" value={brand.RECURLY_AUTO_RENEW ? "Yes" : "No"} />
+              )}
+              {brand.RECURLY_BILLING_PORTAL_URL && (
+                <Row label="Billing portal" value={
+                  <a href={brand.RECURLY_BILLING_PORTAL_URL} target="_blank" rel="noopener noreferrer"
+                    style={{ color: "#72a4bf" }} className="flex items-center gap-1 hover:opacity-80" title="Brand's self-service billing portal — sensitive, internal use only">
+                    Open <ExternalLink size={11} />
+                  </a>
+                } />
+              )}
+            </div>
+          )}
 
           {/* Products */}
           <div className="mb-6">
@@ -562,6 +657,15 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
             />
             <Row label="Share threshold met" value={brand.HAS_SHARE_THRESHOLD_MET ? "Yes" : "No"} />
             <EditableText brandId={brand.BRAND_ID} field="COLLABORATOR_CODE" label="Collaborator code" value={brand.COLLABORATOR_CODE} hubspotCompanyId={brand.HUBSPOT_COMPANY_ID} onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { COLLABORATOR_CODE: v })} />
+          </div>
+
+          {/* SE Sprint queue — brands land here via the "Request for Assisted
+              Implementation" form (see lib/se-sprint-sheet.ts) or by being
+              added manually. Only a manual add can be removed here — a real
+              form submission keeps showing up on next sync regardless. */}
+          <div className="mb-6">
+            <div className="mb-2" style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>SE Sprint</div>
+            <SeSprintControl brand={brand} onBrandUpdate={onBrandUpdate} />
           </div>
 
           {/* Widget Status — per-type go-live tracking */}

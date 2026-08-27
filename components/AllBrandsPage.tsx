@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
 import { ALL_COLUMNS } from "./Dashboard";
+import { SENTIMENT_STYLES } from "./BrandCard";
 import Sidebar from "./Sidebar";
 import { Download, Search } from "lucide-react";
 
-const SE_OWNERS = ["maha", "noor", "naumaan"];
+const SE_OWNERS = ["maha", "noor", "naumaan", "andres"];
 
 function csvCell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
@@ -31,7 +32,7 @@ function exportBrandsCsv(brands: Brand[]) {
     "Badge Ready Date", "Reviews Ready Date", "CAI Ready Date",
     "Badge Imp (Y/N)", "Reviews Imp (Y/N)", "CAI Imp (Y/N)",
     "On Reachout Sheet (Y/N)", "Reached Out (Y/N)", "Reached Out Send Date",
-    "Churned",
+    "Pylon Sentiment", "Churned",
   ];
   const rows = brands.map((b) => [
     csvCell(b.BRAND_NAME),
@@ -56,6 +57,7 @@ function exportBrandsCsv(brands: Brand[]) {
     b.ON_REACHOUT_SHEET ? "Y" : "N",
     csvCell(reachedOutLabel(b)),
     csvCell(b.REACHED_OUT_SEND_LABEL ?? ""),
+    csvCell(b.PYLON_SENTIMENT ?? ""),
     csvCell(b.PIPELINE_STATUS === "churned" ? new Date(b.STATUS_ENTERED_AT).toLocaleDateString() : ""),
   ]);
   const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -141,6 +143,7 @@ export default function AllBrandsPage({
     BADGE_IMPLEMENTED: { kind: "select", field: "BADGE_IMPLEMENTED", options: [{ value: "true", label: "Y" }, { value: "false", label: "N" }] },
     REVIEWS_IMPLEMENTED: { kind: "select", field: "REVIEWS_IMPLEMENTED", options: [{ value: "true", label: "Y" }, { value: "false", label: "N" }] },
     CAI_IMPLEMENTED: { kind: "select", field: "CAI_IMPLEMENTED", options: [{ value: "true", label: "Y" }, { value: "false", label: "N" }] },
+    PYLON_SENTIMENT: { kind: "select", field: "PYLON_SENTIMENT", options: Object.entries(SENTIMENT_STYLES).map(([value, s]) => ({ value, label: s.label })) },
     REACHED_OUT: {
       kind: "select",
       field: "REACHED_OUT",
@@ -163,12 +166,6 @@ export default function AllBrandsPage({
         return String(raw ?? "").toLowerCase().includes(value.toLowerCase());
       }
       if (config.kind === "select") {
-        // SE_OWNER data mixes shortnames ("maha") and HubSpot full names
-        // ("Maha Awaisi") for the same person — match either form so picking
-        // "maha" from the dropdown catches both.
-        if (key === "SE_OWNER") {
-          return typeof raw === "string" && raw.toLowerCase().startsWith(value.toLowerCase());
-        }
         // "not_listed" isn't a value of REACHED_OUT itself (that's boolean|null,
         // and null also covers "listed but blank") — it means the brand never
         // appeared on the reachouts sheet at all, tracked separately.
@@ -378,6 +375,7 @@ export default function AllBrandsPage({
                   <Th label="Reviews Imp" field="REVIEWS_IMPLEMENTED" />
                   <Th label="CAI Imp" field="CAI_IMPLEMENTED" />
                   <Th label="Reached Out" field="REACHED_OUT" />
+                  <Th label="Sentiment" field="PYLON_SENTIMENT" />
                   <Th label="Churned" field="PIPELINE_STATUS" />
                   <th className="px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>Links</th>
                 </tr>
@@ -400,6 +398,7 @@ export default function AllBrandsPage({
                   <FilterCell column="REVIEWS_IMPLEMENTED" />
                   <FilterCell column="CAI_IMPLEMENTED" />
                   <FilterCell column="REACHED_OUT" />
+                  <FilterCell column="PYLON_SENTIMENT" />
                   <td className="px-4 pb-2" />
                   <td className="px-4 pb-2" />
                 </tr>
@@ -460,6 +459,19 @@ export default function AllBrandsPage({
                             <option value="true">{`Y${brand.REACHED_OUT_SEND_LABEL ? ` (${brand.REACHED_OUT_SEND_LABEL})` : ""}`}</option>
                             <option value="false">{`N${brand.REACHED_OUT_SEND_LABEL ? ` (${brand.REACHED_OUT_SEND_LABEL})` : ""}`}</option>
                           </select>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {brand.PYLON_SENTIMENT ? (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                            style={{
+                              background: (SENTIMENT_STYLES[brand.PYLON_SENTIMENT]?.color ?? "#8a8a8a") + "22",
+                              color: SENTIMENT_STYLES[brand.PYLON_SENTIMENT]?.color ?? "#8a8a8a",
+                            }}>
+                            {SENTIMENT_STYLES[brand.PYLON_SENTIMENT]?.label ?? brand.PYLON_SENTIMENT}
+                          </span>
+                        ) : (
+                          <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "0.875rem" }}>—</span>
                         )}
                       </td>
                       <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem" }}>
