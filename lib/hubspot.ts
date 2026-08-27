@@ -263,6 +263,69 @@ export async function getHubSpotOwnerChecksByCompanyId(companyIds: number[]): Pr
   return result;
 }
 
+// A company's "close date" is really its associated deal's closedate — deals
+// close, companies don't. Scoped to the given company IDs (same reasoning as
+// getHubSpotOwnerChecksByCompanyId: batch/read by ID has no result cap, unlike
+// Search). Uses the v4 batch associations-read endpoint (chunks of 100, same
+// as every other batch call in this file) rather than one association call
+// per company — N parallel single-object calls blew straight through
+// HubSpot's per-second rate limit and silently failed almost every lookup.
+// Returns a map of HubSpot company ID -> earliest closed-won deal's closedate
+// (HubSpot's ISO-8601 string), for companies with one.
+export async function getCloseDatesByCompanyId(companyIds: number[]): Promise<Map<number, string>> {
+  const result = new Map<number, string>();
+  if (!getKey() || companyIds.length === 0) return result;
+
+  try {
+    const uniqueIds = Array.from(new Set(companyIds));
+    const dealIdsByCompanyId = new Map<number, string[]>();
+    for (let i = 0; i < uniqueIds.length; i += 100) {
+      const chunk = uniqueIds.slice(i, i + 100);
+      const assocRes = await fetch(`${BASE}/crm/v4/associations/companies/deals/batch/read`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs: chunk.map((id) => ({ id: String(id) })) }),
+      });
+      if (!assocRes.ok) continue;
+      const assocData: { results?: { from: { id: string }; to: { toObjectId: string }[] }[] } = await assocRes.json();
+      for (const r of assocData.results ?? []) {
+        const companyId = Number(r.from.id);
+        const dealIds = (r.to ?? []).map((t) => String(t.toObjectId));
+        if (companyId && dealIds.length) dealIdsByCompanyId.set(companyId, dealIds);
+      }
+    }
+
+    const allDealIds = Array.from(new Set(Array.from(dealIdsByCompanyId.values()).flat()));
+    const closeDateByDealId = new Map<string, string>();
+    for (let i = 0; i < allDealIds.length; i += 100) {
+      const chunk = allDealIds.slice(i, i + 100);
+      const res = await fetch(`${BASE}/crm/v3/objects/deals/batch/read`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          properties: ["dealstage", "closedate"],
+          inputs: chunk.map((id) => ({ id })),
+        }),
+      });
+      if (!res.ok) continue;
+      const data: { results?: { id: string; properties: { dealstage?: string; closedate?: string } }[] } = await res.json();
+      for (const d of data.results ?? []) {
+        if (d.properties.dealstage === "closedwon" && d.properties.closedate) {
+          closeDateByDealId.set(d.id, d.properties.closedate);
+        }
+      }
+    }
+
+    for (const [companyId, dealIds] of dealIdsByCompanyId) {
+      const closeDates = dealIds.map((id) => closeDateByDealId.get(id)).filter((d): d is string => !!d);
+      if (closeDates.length) result.set(companyId, closeDates.sort()[0]);
+    }
+  } catch (err) {
+    console.error("getCloseDatesByCompanyId failed", err);
+  }
+  return result;
+}
+
 // Returns true if the company has at least one "Closed Won" deal in HubSpot.
 // Fails open (returns true) if there's no HubSpot ID or the API call fails.
 export async function isCompanyClosedWon(hubspotCompanyId: number): Promise<boolean> {

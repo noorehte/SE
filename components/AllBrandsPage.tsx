@@ -91,7 +91,15 @@ const QUICK_FILTERS: QuickFilter[] = [
   },
 ];
 
-export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[] }) {
+export default function AllBrandsPage({
+  initialBrands,
+  title = "Table view",
+  activeNavKey = "brands",
+}: {
+  initialBrands: Brand[];
+  title?: string;
+  activeNavKey?: string;
+}) {
   const [brands, setBrands] = useState(initialBrands);
   const [search, setSearch] = useState("");
   const [seFilter, setSeFilter] = useState("all");
@@ -286,12 +294,12 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
 
   return (
     <div className="flex min-h-screen" style={{ background: "#0d1b26", color: "#fff" }}>
-      <Sidebar active="brands" />
+      <Sidebar active={activeNavKey} />
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Header */}
         <div className="px-8 py-5 flex items-center justify-between flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
           <div>
-            <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff" }}>Table view</h1>
+            <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff" }}>{title}</h1>
             <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>{sorted.length} of {brands.length} brands</p>
           </div>
           <div className="flex items-center gap-2">
@@ -412,7 +420,7 @@ export default function AllBrandsPage({ initialBrands }: { initialBrands: Brand[
                       <td className="px-4 py-3">
                         <select value={brand.PIPELINE_STATUS} onChange={(e) => moveBrand(brand.BRAND_ID, e.target.value as PipelineStatus)}
                           className="rounded-full border-0 cursor-pointer px-2 py-0.5"
-                          style={{ background: (col?.accent ?? "#333") + "22", color: col?.accent ?? "#fff", fontSize: "0.8rem" }}>
+                          style={{ background: (col?.accent ?? "#8a96a3") + "22", color: col?.accent ?? "#fff", fontSize: "0.8rem" }}>
                           {ALL_COLUMNS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                         </select>
                       </td>

@@ -1,5 +1,5 @@
 import { getAllOverrides, OverrideEntry } from "@/lib/overrides";
-import { getHubSpotOwnerChecksByCompanyId, normalizeOwnerName } from "@/lib/hubspot";
+import { getHubSpotOwnerChecksByCompanyId, getCloseDatesByCompanyId, normalizeOwnerName } from "@/lib/hubspot";
 
 async function metabaseQuery(tableId: number, fields?: number[], filters?: unknown[], limit?: number) {
   // Read at request time — module-level access gets baked in as undefined for Sensitive vars
@@ -137,6 +137,7 @@ export interface Brand {
   ANY_ADMIN_LAST_SIGNED_IN_AT: string | null;
   COLLABORATOR_CODE: string | null;
   PAYMENT_COMPLETED_AT: string | null;
+  CLOSE_DATE: string | null; // HubSpot closed-won deal's closedate, if any
   HAS_PENDING_BOARD_REVIEW: boolean;
   HAS_REJECTED_BY_BOARD: boolean;
   HAS_APPROVED_PRODUCTS: boolean;
@@ -148,6 +149,12 @@ export interface Brand {
   WIDGET_TYPES: string[];
   WIDGET_STATUSES: Record<string, WidgetTypeStatus>;
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
+  // Best-performing published product page (highest live-signal combo, ties
+  // broken by name) — surfaced in the Exec Overview so a click lands on the
+  // PDP that actually demonstrates what's live, not just any product's page.
+  // null if the brand has no published, non-discarded product with a URL.
+  TOP_PDP: { name: string; url: string; badgeLive: boolean; reviewsLive: boolean; caiLive: boolean } | null;
+  PDP_COUNT: number; // published, non-discarded products with a page URL
   PYLON_SENTIMENT: string | null; // Pylon account's "Sentiment" custom field, matched by HUBSPOT_COMPANY_ID — null if no Pylon account or no sentiment set
   PYLON_LAST_COMMUNICATION_AT: string | null; // Pylon account's latest_customer_activity_time — null if no Pylon account or no activity on file
   RECURLY_STATE: string | null; // Recurly subscription state ("active" | "future" | "expired" | "failed" | "paused" | ...) for the brand's most recent subscription — null if no Recurly account/subscription found
@@ -180,6 +187,11 @@ export interface Brand {
   // Automated snippet follow-ups (SE-tracker controls, stored as field overrides):
   FOLLOWUP_SNOOZE_UNTIL: string | null; // ISO date — send one agnostic follow-up on this date, then stop
   FOLLOWUPS_DISABLED: boolean;           // hard-off switch for this brand
+  // VIP-board-only Kanban column (SE-tracker control, stored as a field override) —
+  // moves a brand out of its real PIPELINE_STATUS column into "A/B Testing" without
+  // losing that real status, so it lands back in the right column once removed.
+  AB_TESTING: boolean;
+  AB_TESTING_NOTES: string | null;
 }
 
 // "Stuck" means sitting too long in a status that still needs SE action.
@@ -251,7 +263,7 @@ export async function getBrands(): Promise<Brand[]> {
   // No explicit field list for table 203 here (unlike the other tables) — we
   // need to find specific columns by name below, and don't yet know their
   // field IDs the way we do for the columns we've been selecting explicitly.
-  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, onboardingChannelRows, reviewsDeliveredRows, readyDateRows] = await Promise.all([
+  const [onboardingRows, allStgBrandRows, productRows, widgetStatusRows, churnedBrandRows, onboardingChannelRows, reviewsDeliveredRows, readyDateRows, productWidgetStatusRows, pdpProductRows, approvedAssessmentRows] = await Promise.all([
     metabaseQuery(447, BRAND_FIELDS),
     metabaseQuery(203),
     // health_brand_products has 5,900+ rows — table 202 (Metabase's mirror)
@@ -262,7 +274,7 @@ export async function getBrands(): Promise<Brand[]> {
     // "not_started" even though its products are fully approved. Queried
     // directly from Postgres via Grafana instead, same as the widgets fix.
     queryGrafanaPostgres(`
-      select health_brand_id, name, status, date_passed_provider_threshold, store_presence_count
+      select health_brand_id, name, status, date_passed_provider_threshold, store_presence_count, product_page_url
       from health_brand_products
     `),
     // Per-brand, per-widget-type live status, straight from Postgres via
@@ -355,6 +367,36 @@ export async function getBrands(): Promise<Brand[]> {
         full outer join reviews on reviews.bid = badge.bid
         full outer join ca on ca.bid = coalesce(badge.bid, reviews.bid)
     `),
+    // Same live-widget logic as WIDGET_STATUSES above, but grouped down to the
+    // individual product rather than collapsed to brand+type — needed to tell
+    // which specific PDP is driving a brand's live status (Exec Overview's
+    // "PDP Links" field), since a brand's products can be at different
+    // live-signal levels from each other.
+    queryGrafanaPostgres(`
+      select
+        w.health_brand_product_id,
+        w.presentation_type,
+        bool_or(w.first_view_date is not null and w.last_view_date is null) as is_live
+      from widgets w
+      where w.discarded_at is null
+      group by w.health_brand_product_id, w.presentation_type
+    `),
+    // Published, non-discarded products with an actual page URL — the
+    // candidate pool for the Exec Overview's PDP link. Unpublished/discarded
+    // rows can carry junk URLs (affiliate redirects, onboarding placeholders).
+    queryGrafanaPostgres(`
+      select id, health_brand_id, name, product_page_url
+      from health_brand_products
+      where discarded_at is null and status = 'published' and product_page_url is not null
+    `),
+    // Approved assessments, per product — same "CA ready" rule as the CTE
+    // above (approved assessment + matching widget on the same product), but
+    // needed per-product here rather than rolled up to a single brand-level date.
+    queryGrafanaPostgres(`
+      select distinct health_brand_product_id
+      from product_assessments
+      where approved
+    `),
   ]);
 
   // Only brands flagged as an actual partner belong on the dashboard — table 203
@@ -382,6 +424,7 @@ export async function getBrands(): Promise<Brand[]> {
     .map((r: Record<string, unknown>) => r.HUBSPOT_COMPANY_ID as number | null)
     .filter((id: number | null): id is number => id != null);
   const hubspotOwnerChecksByCompanyId = await getHubSpotOwnerChecksByCompanyId(pipelineCompanyIds);
+  const closeDatesByCompanyId = await getCloseDatesByCompanyId(pipelineCompanyIds);
 
   // Table 203 (stg-brands) is the comprehensive brand list — every brand flows in
   // here, including ones that never went through the onboarding portal. Table 447
@@ -576,11 +619,64 @@ export async function getBrands(): Promise<Brand[]> {
     }
   }
 
+  // Per-product live-widget status, keyed by product id — same "quant/sticker
+  // = badge, qual = reviews, gpt/analysis/gpt_s = CAI" grouping as
+  // isTypeLive/implementedByBrand above, just scoped to one product instead
+  // of rolled up across the whole brand.
+  const widgetLiveByProduct = new Map<number, Record<string, boolean>>();
+  for (const r of productWidgetStatusRows as Record<string, unknown>[]) {
+    const productId = r.health_brand_product_id as number | null;
+    const type = r.presentation_type as string | null;
+    if (productId == null || !type) continue;
+    const existing = widgetLiveByProduct.get(productId) ?? {};
+    existing[type] = !!r.is_live;
+    widgetLiveByProduct.set(productId, existing);
+  }
+
+  const approvedAssessmentProductIds = new Set<number>();
+  for (const r of approvedAssessmentRows as Record<string, unknown>[]) {
+    const productId = r.health_brand_product_id as number | null;
+    if (productId != null) approvedAssessmentProductIds.add(productId);
+  }
+
+  // For each brand, rank its eligible (published, non-discarded, has a URL)
+  // products by live-signal tier and keep the best one — the PDP that best
+  // demonstrates what's actually live, since different products on the same
+  // brand can sit at different levels.
+  const pdpTier = (badgeLive: boolean, reviewsLive: boolean, caiLive: boolean) =>
+    badgeLive && reviewsLive && caiLive ? 3 : badgeLive && reviewsLive ? 2 : badgeLive || reviewsLive ? 1 : 0;
+
+  const topPdpByBrand = new Map<number, { name: string; url: string; badgeLive: boolean; reviewsLive: boolean; caiLive: boolean }>();
+  const pdpCountByBrand = new Map<number, number>();
+  for (const r of pdpProductRows as Record<string, unknown>[]) {
+    const brandId = r.health_brand_id as number | null;
+    const productId = r.id as number | null;
+    const url = r.product_page_url as string | null;
+    if (brandId == null || productId == null || !url) continue;
+
+    pdpCountByBrand.set(brandId, (pdpCountByBrand.get(brandId) ?? 0) + 1);
+
+    const types = widgetLiveByProduct.get(productId) ?? {};
+    const badgeLive = !!(types.quant || types.sticker);
+    const reviewsLive = !!types.qual;
+    const caiLive = !!(types.gpt || types.analysis || types.gpt_s) && approvedAssessmentProductIds.has(productId);
+
+    const candidate = { name: (r.name as string | null) ?? "Unnamed product", url, badgeLive, reviewsLive, caiLive };
+    const existing = topPdpByBrand.get(brandId);
+    if (!existing || pdpTier(badgeLive, reviewsLive, caiLive) > pdpTier(existing.badgeLive, existing.reviewsLive, existing.caiLive)) {
+      topPdpByBrand.set(brandId, candidate);
+    }
+  }
+
   const now = Date.now();
   const overrides = await getAllOverrides();
 
   function hubspotOwnerCheck(hubspotCompanyId: number | null) {
     return hubspotCompanyId != null ? hubspotOwnerChecksByCompanyId.get(hubspotCompanyId) : undefined;
+  }
+
+  function closeDateFor(hubspotCompanyId: number | null): string | null {
+    return hubspotCompanyId != null ? closeDatesByCompanyId.get(hubspotCompanyId) ?? null : null;
   }
 
   function buildBrand(
@@ -630,7 +726,10 @@ export async function getBrands(): Promise<Brand[]> {
       HUBSPOT_COMPANY_ID: stg.HUBSPOT_COMPANY_ID ?? null,
       COLLABORATOR_CODE: f.COLLABORATOR_CODE ?? stg.COLLABORATOR_CODE ?? null,
       KIND: f.KIND ?? stg.KIND ?? null,
+      AB_TESTING: f.AB_TESTING === "true",
+      AB_TESTING_NOTES: f.AB_TESTING_NOTES ?? null,
       PAYMENT_COMPLETED_AT: null,
+      CLOSE_DATE: closeDateFor(stg.HUBSPOT_COMPANY_ID),
       HAS_PENDING_BOARD_REVIEW: pendingBoardReview.has(brandId),
       HAS_REJECTED_BY_BOARD: rejectedByBoard.has(brandId),
       HAS_APPROVED_PRODUCTS: approvedProductBrands.has(brandId),
@@ -649,6 +748,8 @@ export async function getBrands(): Promise<Brand[]> {
       RECURLY_CURRENT_TERM_ENDS_AT: null as string | null,
       RECURLY_AUTO_RENEW: null as boolean | null,
       RECURLY_BILLING_PORTAL_URL: null as string | null,
+      TOP_PDP: topPdpByBrand.get(brandId) ?? null,
+      PDP_COUNT: pdpCountByBrand.get(brandId) ?? 0,
       ON_REACHOUT_SHEET: false,
       REACHED_OUT: null as boolean | null,
       REACHED_OUT_SEND_LABEL: null as string | null,
