@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
-import { ExternalLink, CalendarCheck } from "lucide-react";
+import { ExternalLink, CalendarCheck, ChevronDown, ChevronRight, FlaskConical } from "lucide-react";
 import { ScheduledCall } from "./Dashboard";
 
 const SHARE_COUNTS_COLLAPSED_LIMIT = 3;
@@ -43,7 +43,117 @@ function initials(name: string | null) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export default function BrandCard({ brand, accent, scheduledCall }: { brand: Brand; accent: string; scheduledCall: ScheduledCall | null }) {
+async function saveAbTestingNotes(brandId: number, value: string): Promise<string | null> {
+  try {
+    const res = await fetch("/api/field-overrides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brandId, field: "AB_TESTING_NOTES", value }),
+    });
+    const data = await res.json();
+    if (!data.ok) return data.errors?.join("; ") ?? "Save failed";
+    return null;
+  } catch (e) {
+    return String(e);
+  }
+}
+
+function AbTestingNotes({ brandId, notes }: { brandId: number; notes: string | null }) {
+  const [value, setValue] = useState(notes ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function handleBlur() {
+    if (value === (notes ?? "")) return;
+    setSaving(true);
+    setSaveError(null);
+    const err = await saveAbTestingNotes(brandId, value);
+    setSaveError(err);
+    setSaving(false);
+  }
+
+  return (
+    <div className="mt-2" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+      <textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        placeholder="Notes / status…"
+        rows={2}
+        draggable={false}
+        style={{
+          width: "100%",
+          resize: "vertical",
+          background: "rgba(255,255,255,0.05)",
+          border: "1px solid rgba(232,121,168,0.3)",
+          borderRadius: "6px",
+          padding: "6px 8px",
+          fontSize: "0.78rem",
+          color: "#fff",
+        }}
+      />
+      {saving ? (
+        <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)" }}>saving…</span>
+      ) : saveError ? (
+        <span title={saveError} style={{ fontSize: "0.7rem", color: "#e05c5c", cursor: "help" }}>✗ not saved</span>
+      ) : null}
+    </div>
+  );
+}
+
+export function AbTestingToggle({ value, onToggle }: { value: boolean; onToggle: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onToggle(!value); }}
+      className="relative inline-flex items-center rounded-full flex-shrink-0 transition-colors"
+      style={{ width: "26px", height: "15px", background: value ? "#e879a8" : "rgba(255,255,255,0.15)" }}
+      title={value ? "A/B Testing: On — click to turn off" : "A/B Testing: Off — click to turn on"}
+    >
+      <span
+        className="absolute rounded-full transition-transform"
+        style={{ width: "11px", height: "11px", background: "#fff", top: "2px", left: "2px", transform: value ? "translateX(11px)" : "translateX(0)" }}
+      />
+    </button>
+  );
+}
+
+function AbTestingSection({
+  brandId, value, notes, onToggle,
+}: {
+  brandId: number;
+  value: boolean;
+  notes: string | null;
+  onToggle: (v: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mt-2" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} draggable={false}>
+      <div className="flex items-center gap-1.5">
+        <FlaskConical size={12} style={{ color: "rgba(232,121,168,0.85)" }} />
+        <span style={{ color: "rgba(232,121,168,0.85)", fontSize: "0.75rem", fontWeight: 600 }}>A/B Testing</span>
+        <AbTestingToggle value={value} onToggle={onToggle} />
+        {!open && notes && (
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#e879a8" }} title="Has notes" />
+        )}
+        <button onClick={() => setOpen((v) => !v)} className="ml-auto hover:opacity-80" style={{ color: "rgba(255,255,255,0.3)" }}>
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+      </div>
+      {open && <AbTestingNotes brandId={brandId} notes={notes} />}
+    </div>
+  );
+}
+
+export default function BrandCard({
+  brand, accent, scheduledCall, showAbTesting = false, onToggleAbTesting,
+}: {
+  brand: Brand;
+  accent: string;
+  scheduledCall: ScheduledCall | null;
+  showAbTesting?: boolean;
+  onToggleAbTesting?: (brandId: number, newValue: boolean) => void;
+}) {
   const [shareCountsExpanded, setShareCountsExpanded] = useState(false);
   const isStuck = isBrandStuck(brand);
   const blockingItem = BLOCKING_ITEMS[brand.PIPELINE_STATUS];
@@ -164,6 +274,15 @@ export default function BrandCard({ brand, accent, scheduledCall }: { brand: Bra
         <div style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>
           {blockingItem}
         </div>
+      )}
+
+      {showAbTesting && (
+        <AbTestingSection
+          brandId={brand.BRAND_ID}
+          value={brand.AB_TESTING}
+          notes={brand.AB_TESTING_NOTES}
+          onToggle={(v) => onToggleAbTesting?.(brand.BRAND_ID, v)}
+        />
       )}
     </div>
   );

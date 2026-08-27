@@ -108,7 +108,7 @@ export default function AlertsPage({ initialBrands }: { initialBrands: Brand[] }
                           {alert.brand.BRAND_NAME}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: (col?.accent ?? "#333") + "22", color: col?.accent ?? "#fff" }}>
+                          <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: (col?.accent ?? "#8a96a3") + "22", color: col?.accent ?? "#fff" }}>
                             {col?.label ?? alert.brand.PIPELINE_STATUS}
                           </span>
                         </td>
