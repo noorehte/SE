@@ -79,8 +79,10 @@ function mockVipBrands(): Brand[] {
     AB_TESTING_NOTES: null,
     PYLON_SENTIMENT: null,
     PYLON_OPEN_ISSUES_90D: null,
+    PYLON_ACCOUNT_ID: null,
     WEEKLY_FOCUS_PINNED: false,
     WEEKLY_FOCUS_DISMISSED_WEEK: null,
+    WEEKLY_FOCUS_DONE_WEEK: null,
   };
   return [
     { ...base, BRAND_ID: 1, BRAND_NAME: "Aurora Skincare", PIPELINE_STATUS: "live" },
@@ -137,6 +139,7 @@ export default async function Page() {
         PYLON_SENTIMENT: pylon?.sentiment ?? null,
         PYLON_LAST_COMMUNICATION_AT: pylon?.lastActivityAt ?? null,
         PYLON_OPEN_ISSUES_90D: pylon?.openIssues90d ?? null,
+        PYLON_ACCOUNT_ID: pylon?.accountId ?? null,
       };
     });
   return (

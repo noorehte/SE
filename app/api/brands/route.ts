@@ -33,6 +33,7 @@ export async function GET() {
         PYLON_SENTIMENT: pylon?.sentiment ?? null,
         PYLON_LAST_COMMUNICATION_AT: pylon?.lastActivityAt ?? null,
         PYLON_OPEN_ISSUES_90D: pylon?.openIssues90d ?? null,
+        PYLON_ACCOUNT_ID: pylon?.accountId ?? null,
         RECURLY_STATE: recurly?.state ?? null,
         RECURLY_PLAN_NAME: recurly?.planName ?? null,
         RECURLY_AMOUNT: recurly?.amount ?? null,

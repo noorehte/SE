@@ -3,13 +3,13 @@
 import { useMemo, useState } from "react";
 import { Brand } from "@/lib/metabase";
 import { SeSprintEntry } from "@/lib/se-sprint-sheet";
-import { weeklyFocusScore, weeklyFocusReasons, isWeeklyFocusVisible, isoWeek, WeeklyFocusReason } from "@/lib/weekly-focus";
+import { weeklyFocusReasons, isoWeek, resolveWeeklyLane, WeeklyFocusReason } from "@/lib/weekly-focus";
+import { WeeklySnapshot } from "@/lib/weekly-snapshot";
 import { ALL_COLUMNS, SE_OWNERS } from "./Dashboard";
+import { BLOCKING_ITEMS } from "./BrandCard";
 import Sidebar from "./Sidebar";
 import { EditableText } from "./BrandDetailPanel";
-import { Rocket, X, ExternalLink, Trash2, Pin, PinOff } from "lucide-react";
-
-const LANE_SIZE = 20;
+import { Rocket, X, ExternalLink, Trash2, Pin, PinOff, Check, RotateCcw } from "lucide-react";
 
 // Whether we actually have the code in hand — the form's own "have you
 // shared it?" Yes/No/Unsure answer is self-reported and can't be trusted on
@@ -40,6 +40,10 @@ function shopifyAdminUrl(raw: string | null | undefined): string | null {
   return `https://${host}/admin`;
 }
 
+function pylonAccountUrl(brand: Brand): string | null {
+  return brand.PYLON_ACCOUNT_ID ? `https://app.usepylon.com/accounts/${brand.PYLON_ACCOUNT_ID}` : null;
+}
+
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -63,21 +67,71 @@ function ReasonBadges({ reasons }: { reasons: WeeklyFocusReason[] }) {
   );
 }
 
+// One concrete next step per reason a brand is on the board — what an SE
+// should actually go do, not just a restatement of the badge. Falls back to
+// the pipeline's own blocking-item text (BrandCard.BLOCKING_ITEMS) when a
+// reason doesn't have a more specific action of its own.
+function NextSteps({ brand }: { brand: Brand }) {
+  const steps: { label: string; href?: string }[] = [];
+  const pylonUrl = pylonAccountUrl(brand);
+  const isFrustrated = brand.PYLON_SENTIMENT === "high_risk_detractor" || brand.PYLON_SENTIMENT === "frustrated";
+  const hasTicketVolume = !!brand.PYLON_OPEN_ISSUES_90D && brand.PYLON_OPEN_ISSUES_90D >= 3;
+
+  // One Pylon step covers both signals when they overlap (a frustrated brand
+  // with high ticket volume shouldn't get two separate links to the same
+  // account) — the label names whichever combination applies.
+  if (isFrustrated || hasTicketVolume) {
+    const label = isFrustrated && hasTicketVolume
+      ? `Review Pylon — frustrated, ${brand.PYLON_OPEN_ISSUES_90D} open tickets`
+      : isFrustrated
+        ? "Review recent Pylon activity and check in"
+        : `Triage ${brand.PYLON_OPEN_ISSUES_90D} open tickets`;
+    steps.push({ label, href: pylonUrl ?? undefined });
+  }
+  if (brand.ON_SE_SPRINT_SHEET) {
+    steps.push({ label: "Review the implementation request below" });
+  }
+  const blocking = BLOCKING_ITEMS[brand.PIPELINE_STATUS];
+  if (blocking) {
+    steps.push({ label: blocking });
+  }
+  if (steps.length === 0) return null;
+
+  return (
+    <div className="mt-1">
+      {steps.map((s, i) => (
+        s.href ? (
+          <a key={i} href={s.href} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 py-1.5 hover:opacity-80"
+            style={{ fontSize: "0.85rem", color: "#72a4bf" }}>
+            {s.label} <ExternalLink size={12} />
+          </a>
+        ) : (
+          <div key={i} className="py-1.5" style={{ fontSize: "0.85rem", color: "#fff" }}>{s.label}</div>
+        )
+      ))}
+    </div>
+  );
+}
+
 // Shows what THIS form submission actually said — hosting/page builder/
 // headless/theme/notes/etc. — rather than the brand's general pipeline
 // status, SE/AM/Ops, or widget history (that's what BrandDetailPanel is
 // for, and it's not what an SE needs when working through this queue).
-function SprintRequestPanel({ brand, entry, onClose, onDismiss, onTogglePin, onRemoveCollabRequest, onBrandUpdate }: {
+function SprintRequestPanel({ brand, entry, currentWeek, onClose, onDismiss, onTogglePin, onToggleDone, onRemoveCollabRequest, onBrandUpdate }: {
   brand: Brand;
   entry: SeSprintEntry | undefined;
+  currentWeek: string;
   onClose: () => void;
   onDismiss: () => void;
   onTogglePin: () => void;
+  onToggleDone: () => void;
   onRemoveCollabRequest: () => void;
   onBrandUpdate: (brandId: number, updates: Partial<Brand>) => void;
 }) {
   const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
   const reasons = weeklyFocusReasons(brand);
+  const isDone = brand.WEEKLY_FOCUS_DONE_WEEK === currentWeek;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
@@ -93,10 +147,22 @@ function SprintRequestPanel({ brand, entry, onClose, onDismiss, onTogglePin, onR
           <button onClick={onClose} style={{ color: "rgba(255,255,255,0.4)" }} className="hover:opacity-70"><X size={18} /></button>
         </div>
         <div className="mt-2 mb-3"><ReasonBadges reasons={reasons} /></div>
-        <div className="flex items-center gap-3 mb-1 flex-wrap">
+
+        <div className="mt-1" style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          Next steps
+        </div>
+        <NextSteps brand={brand} />
+
+        <div className="flex items-center gap-3 mt-4 mb-1 flex-wrap">
           <a href={adminUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.75rem", color: "#72a4bf" }} className="flex items-center gap-1 hover:opacity-80">
             Open in Admin <ExternalLink size={11} />
           </a>
+          <button
+            onClick={onToggleDone}
+            style={{ fontSize: "0.75rem", color: isDone ? "#4caf82" : "rgba(255,255,255,0.5)" }}
+            className="flex items-center gap-1 hover:opacity-80">
+            {isDone ? <><RotateCcw size={11} /> Move back to to-do</> : <><Check size={11} /> Mark handled this week</>}
+          </button>
           <button
             onClick={onTogglePin}
             style={{ fontSize: "0.75rem", color: brand.WEEKLY_FOCUS_PINNED ? "#e9a84c" : "rgba(255,255,255,0.5)" }}
@@ -183,16 +249,85 @@ function SprintRequestPanel({ brand, entry, onClose, onDismiss, onTogglePin, onR
   );
 }
 
-export default function SeSprintPage({ initialBrands, entriesByBrandId }: { initialBrands: Brand[]; entriesByBrandId: Record<number, SeSprintEntry> }) {
+function FocusCard({ brand, done, onClick, onTogglePin, onToggleDone, onDismiss }: {
+  brand: Brand;
+  done: boolean;
+  onClick: () => void;
+  onTogglePin: () => void;
+  onToggleDone: () => void;
+  onDismiss: () => void;
+}) {
+  const col = ALL_COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
+  const reasons = weeklyFocusReasons(brand);
+  const code = collaboratorCode(brand);
+  const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
+
+  return (
+    <div
+      onClick={onClick}
+      className="cursor-pointer hover:opacity-95"
+      style={{
+        flex: "0 0 200px",
+        background: done ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.06)",
+        border: `1px solid ${done ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.1)"}`,
+        borderLeft: `3px solid ${done ? "rgba(76,175,130,0.5)" : (reasons[0]?.color ?? col?.accent ?? "#72a4bf")}`,
+        borderRadius: "10px",
+        padding: "12px",
+        opacity: done ? 0.6 : 1,
+      }}
+    >
+      <div className="flex items-center gap-1.5 mb-2">
+        {brand.WEEKLY_FOCUS_PINNED && <Pin size={12} style={{ color: "#e9a84c", flexShrink: 0 }} />}
+        {done && <Check size={12} style={{ color: "#4caf82", flexShrink: 0 }} />}
+        <span style={{
+          fontFamily: "Librebaskerville, Arial, sans-serif", fontWeight: 700, fontSize: "0.92rem", color: "#fff",
+          textDecoration: done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {brand.BRAND_NAME}
+        </span>
+      </div>
+
+      {!done && (
+        <div className="mb-2.5"><ReasonBadges reasons={reasons} /></div>
+      )}
+
+      <div className="flex items-center justify-between" style={{ fontSize: "0.75rem" }}>
+        <span className="px-1.5 py-0.5 rounded-full" style={{ background: (col?.accent ?? "#333") + "22", color: col?.accent ?? "#fff", fontSize: "0.68rem" }}>
+          {col?.label ?? brand.PIPELINE_STATUS}
+        </span>
+        <div className="flex gap-1.5" style={{ color: "rgba(255,255,255,0.3)" }}>
+          <button onClick={stop(onTogglePin)} title={brand.WEEKLY_FOCUS_PINNED ? "Unpin" : "Pin this week"}
+            className="hover:opacity-100" style={{ color: brand.WEEKLY_FOCUS_PINNED ? "#e9a84c" : "inherit" }}>
+            {brand.WEEKLY_FOCUS_PINNED ? <PinOff size={13} /> : <Pin size={13} />}
+          </button>
+          <button onClick={stop(onToggleDone)} title={done ? "Move back to to-do" : "Mark handled"}
+            className="hover:opacity-100" style={{ color: done ? "#4caf82" : "inherit" }}>
+            {done ? <RotateCcw size={13} /> : <Check size={13} />}
+          </button>
+          <button onClick={stop(onDismiss)} title="Dismiss for this week" className="hover:opacity-100 hover:text-red-400">
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      {code && (
+        <div className="mt-2" style={{ fontSize: "0.75rem", color: "#4caf82", fontFamily: "monospace" }}>{code}</div>
+      )}
+    </div>
+  );
+}
+
+export default function SeSprintPage({ initialBrands, entriesByBrandId, snapshot }: {
+  initialBrands: Brand[];
+  entriesByBrandId: Record<number, SeSprintEntry>;
+  snapshot: WeeklySnapshot;
+}) {
   const [brands, setBrands] = useState(initialBrands);
   const [seFilter, setSeFilter] = useState<string>("all");
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const currentWeek = useMemo(() => isoWeek(new Date()), []);
 
-  const visible = useMemo(
-    () => brands.filter((b) => isWeeklyFocusVisible(b, currentWeek)),
-    [brands, currentWeek]
-  );
+  const brandsById = useMemo(() => new Map(brands.map((b) => [b.BRAND_ID, b])), [brands]);
 
   // Scoped to the real SE roster (not every distinct SE_OWNER value in the
   // data) — a brand can carry a HubSpot owner's raw full name as a fallback
@@ -200,19 +335,20 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
   // shortname, and those aren't SEs we want a weekly lane for.
   const seOptions = SE_OWNERS;
 
-  // Highest-scoring brands first within each SE's lane, capped at LANE_SIZE —
-  // a pin always keeps a brand visible regardless of rank, so pinned brands
-  // beyond the cap are appended rather than dropped.
-  function laneFor(se: string): Brand[] {
-    const owned = visible.filter((b) => b.SE_OWNER === se);
-    const ranked = [...owned].sort((a, b) => weeklyFocusScore(b) - weeklyFocusScore(a));
-    const top = ranked.slice(0, LANE_SIZE);
-    const pinnedBeyondCap = ranked.slice(LANE_SIZE).filter((b) => b.WEEKLY_FOCUS_PINNED);
-    return [...top, ...pinnedBeyondCap];
+  // Frozen order (see lib/weekly-snapshot.ts) resolved against live brand
+  // data — churned/dismissed brands drop out, a brand pinned mid-week that
+  // missed the snapshot gets appended. Split into to-do / done so progress
+  // through the week is visible instead of the list just staying static.
+  function laneFor(se: string): { todo: Brand[]; done: Brand[] } {
+    const resolved = resolveWeeklyLane(brandsById, snapshot.bySe[se] ?? [], se, currentWeek);
+    const todo = resolved.filter((b) => b.WEEKLY_FOCUS_DONE_WEEK !== currentWeek);
+    const done = resolved.filter((b) => b.WEEKLY_FOCUS_DONE_WEEK === currentWeek);
+    return { todo, done };
   }
 
-  const lanes = (seFilter === "all" ? seOptions : [seFilter]).map((se) => ({ se, brands: laneFor(se) }));
-  const totalShown = lanes.reduce((sum, l) => sum + l.brands.length, 0);
+  const lanes = (seFilter === "all" ? seOptions : [seFilter]).map((se) => ({ se, ...laneFor(se) }));
+  const totalShown = lanes.reduce((sum, l) => sum + l.todo.length + l.done.length, 0);
+  const totalTodo = lanes.reduce((sum, l) => sum + l.todo.length, 0);
 
   async function saveFieldOverride(brandId: number, field: string, value: string) {
     const res = await fetch("/api/field-overrides", {
@@ -251,6 +387,21 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
     }
   }
 
+  // Doesn't remove the brand from the board — it moves to the lane's "Done"
+  // section so an SE (or anyone glancing at the board) can see real progress
+  // through the week, not just a static list that looks the same all week.
+  async function toggleDone(brandId: number) {
+    const isDone = brands.find((b) => b.BRAND_ID === brandId)?.WEEKLY_FOCUS_DONE_WEEK === currentWeek;
+    const next = isDone ? null : currentWeek;
+    updateBrand(brandId, { WEEKLY_FOCUS_DONE_WEEK: next });
+    try {
+      await saveFieldOverride(brandId, "WEEKLY_FOCUS_DONE_WEEK", next ?? "");
+    } catch (e) {
+      updateBrand(brandId, { WEEKLY_FOCUS_DONE_WEEK: isDone ? currentWeek : null });
+      alert(`Couldn't save: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   // Distinct from dismissForWeek: this removes the brand from the collab-
   // request queue entirely (SE_SPRINT_DISMISSED), same as the old SE Sprint
   // page's "Remove" button — used when a request was handled or added by
@@ -279,7 +430,7 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
           <div>
             <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff" }}>This Week</h1>
             <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>
-              Week {currentWeek} — top {LANE_SIZE} per SE, ranked by frustration, ticket volume, collab requests, and days stuck — {totalShown} shown
+              Week {currentWeek} — {totalTodo} to do, {totalShown - totalTodo} handled
             </p>
           </div>
           <select
@@ -301,84 +452,37 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
             </div>
           ) : (
             <div className="flex flex-col gap-8">
-              {lanes.map(({ se, brands: laneBrands }) => (
+              {lanes.map(({ se, todo, done }) => (
                 <div key={se}>
                   <div className="flex items-center gap-2 mb-3">
                     <Rocket size={16} style={{ color: "#72a4bf" }} />
                     <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "#fff", textTransform: "capitalize" }}>{se}</span>
                     <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.5)" }}>
-                      {laneBrands.length}
+                      {todo.length} to do
                     </span>
+                    {done.length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: "rgba(76,175,130,0.15)", color: "#4caf82" }}>
+                        {done.length} handled
+                      </span>
+                    )}
                   </div>
-                  {laneBrands.length === 0 ? (
+                  {todo.length === 0 && done.length === 0 ? (
                     <div className="rounded-xl py-6 text-center" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.25)", fontSize: "0.85rem" }}>
                       Nothing needs focus here this week.
                     </div>
                   ) : (
-                    <div className="rounded-xl overflow-hidden" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                      <table className="w-full">
-                        <thead style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-                          <tr>
-                            {["Brand", "Status", "Why", "Sentiment", "Collab code", ""].map((h) => (
-                              <th key={h} className="text-left px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {laneBrands.map((brand) => {
-                            const col = ALL_COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
-                            const code = collaboratorCode(brand);
-                            const reasons = weeklyFocusReasons(brand);
-                            return (
-                              <tr key={brand.BRAND_ID} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer" }}
-                                onClick={() => setSelectedBrand(brand)}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
-                                <td className="px-4 py-3" style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "0.9rem", fontWeight: 600, color: "#fff" }}>
-                                  <div className="flex items-center gap-1.5">
-                                    {brand.WEEKLY_FOCUS_PINNED && <Pin size={12} style={{ color: "#e9a84c" }} />}
-                                    {brand.BRAND_NAME}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: (col?.accent ?? "#333") + "22", color: col?.accent ?? "#fff" }}>
-                                    {col?.label ?? brand.PIPELINE_STATUS}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3"><ReasonBadges reasons={reasons} /></td>
-                                <td className="px-4 py-3" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.875rem" }}>{brand.PYLON_SENTIMENT ?? "—"}</td>
-                                <td className="px-4 py-3">
-                                  {code ? (
-                                    <span style={{ fontSize: "0.8rem", color: "#4caf82", fontFamily: "monospace" }}>{code}</span>
-                                  ) : brand.ON_SE_SPRINT_SHEET ? (
-                                    <span style={{ fontSize: "0.8rem", color: "#e9a84c", fontWeight: 600 }}>Not on file</span>
-                                  ) : (
-                                    <span style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.2)" }}>—</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                                  <div className="flex items-center justify-end gap-3">
-                                    <button
-                                      onClick={() => togglePin(brand.BRAND_ID)}
-                                      title={brand.WEEKLY_FOCUS_PINNED ? "Unpin" : "Pin this week"}
-                                      style={{ color: brand.WEEKLY_FOCUS_PINNED ? "#e9a84c" : "rgba(255,255,255,0.3)" }}
-                                      className="hover:opacity-100">
-                                      {brand.WEEKLY_FOCUS_PINNED ? <PinOff size={14} /> : <Pin size={14} />}
-                                    </button>
-                                    <button
-                                      onClick={() => dismissForWeek(brand.BRAND_ID)}
-                                      title="Dismiss for this week"
-                                      style={{ color: "rgba(255,255,255,0.3)" }}
-                                      className="hover:opacity-100 hover:text-red-400">
-                                      <Trash2 size={14} />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                    <div className="flex gap-3 overflow-x-auto pb-2">
+                      {[...todo, ...done].map((brand) => (
+                        <FocusCard
+                          key={brand.BRAND_ID}
+                          brand={brand}
+                          done={brand.WEEKLY_FOCUS_DONE_WEEK === currentWeek}
+                          onClick={() => setSelectedBrand(brand)}
+                          onTogglePin={() => togglePin(brand.BRAND_ID)}
+                          onToggleDone={() => toggleDone(brand.BRAND_ID)}
+                          onDismiss={() => dismissForWeek(brand.BRAND_ID)}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
@@ -392,9 +496,11 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
         <SprintRequestPanel
           brand={selectedBrand}
           entry={entriesByBrandId[selectedBrand.BRAND_ID]}
+          currentWeek={currentWeek}
           onClose={() => setSelectedBrand(null)}
           onDismiss={() => dismissForWeek(selectedBrand.BRAND_ID)}
           onTogglePin={() => togglePin(selectedBrand.BRAND_ID)}
+          onToggleDone={() => toggleDone(selectedBrand.BRAND_ID)}
           onRemoveCollabRequest={() => removeCollabRequest(selectedBrand.BRAND_ID)}
           onBrandUpdate={updateBrand}
         />

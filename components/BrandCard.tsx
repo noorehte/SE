@@ -7,7 +7,7 @@ import { ScheduledCall } from "./Dashboard";
 
 const SHARE_COUNTS_COLLAPSED_LIMIT = 3;
 
-const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
+export const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
   not_started: "Add products",
   pending_review: "Awaiting board review",
   products_approved_needs_call: "Book onboarding call",

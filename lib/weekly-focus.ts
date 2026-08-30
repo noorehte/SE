@@ -93,3 +93,43 @@ export function isWeeklyFocusVisible(brand: Brand, currentWeek: string): boolean
   if (brand.WEEKLY_FOCUS_DISMISSED_WEEK === currentWeek) return false;
   return isWeeklyFocusCandidate(brand);
 }
+
+const LANE_SIZE = 20;
+
+/**
+ * The rank order to FREEZE for a given SE at snapshot time (called once, the
+ * first time a given ISO week is seen — see lib/weekly-snapshot.ts). Highest
+ * score first, capped at LANE_SIZE non-pinned brands (a pin is meaningless at
+ * snapshot time since nothing's been pinned yet this week).
+ */
+export function rankForSnapshot(brands: Brand[], se: string, currentWeek: string): number[] {
+  const owned = brands.filter((b) => b.SE_OWNER === se && isWeeklyFocusVisible(b, currentWeek));
+  return [...owned]
+    .sort((a, b) => weeklyFocusScore(b) - weeklyFocusScore(a))
+    .slice(0, LANE_SIZE)
+    .map((b) => b.BRAND_ID);
+}
+
+/**
+ * Resolves a frozen snapshot order into the actual brands to render for one
+ * SE's lane this week: drops anything no longer visible (churned, dismissed,
+ * unpinned-and-since-fell-out — though the last case can't happen since the
+ * snapshot is frozen), then appends any brand pinned mid-week that wasn't in
+ * the original snapshot (a pin should surface a brand even if it missed the
+ * cut when the week started).
+ */
+export function resolveWeeklyLane(
+  brandsById: Map<number, Brand>,
+  snapshotIds: number[],
+  se: string,
+  currentWeek: string
+): Brand[] {
+  const seen = new Set(snapshotIds);
+  const fromSnapshot = snapshotIds
+    .map((id) => brandsById.get(id))
+    .filter((b): b is Brand => !!b && isWeeklyFocusVisible(b, currentWeek));
+  const pinnedLateAdds = Array.from(brandsById.values()).filter(
+    (b) => b.SE_OWNER === se && b.WEEKLY_FOCUS_PINNED && !seen.has(b.BRAND_ID)
+  );
+  return [...fromSnapshot, ...pinnedLateAdds];
+}

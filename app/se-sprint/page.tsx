@@ -1,9 +1,13 @@
 import { getBrands } from "@/lib/get-brands";
 import { getSeSprintEntries, buildSeSprintLookup, SeSprintEntry } from "@/lib/se-sprint-sheet";
 import { getPylonAccountDataByHubspotId } from "@/lib/pylon-sentiment";
+import { isoWeek, rankForSnapshot } from "@/lib/weekly-focus";
+import { getWeeklySnapshot, setWeeklySnapshot } from "@/lib/weekly-snapshot";
 import WeeklyFocusPage from "@/components/SeSprintPage";
 
 export const dynamic = "force-dynamic";
+
+const SE_OWNERS = ["maha", "noor", "naumaan", "andres", "john"];
 
 export default async function Page() {
   const [brands, seSprintEntries, pylonDataByHubspotId] = await Promise.all([
@@ -33,7 +37,21 @@ export default async function Page() {
       PYLON_SENTIMENT: pylon?.sentiment ?? null,
       PYLON_LAST_COMMUNICATION_AT: pylon?.lastActivityAt ?? null,
       PYLON_OPEN_ISSUES_90D: pylon?.openIssues90d ?? null,
+      PYLON_ACCOUNT_ID: pylon?.accountId ?? null,
     };
   });
-  return <WeeklyFocusPage initialBrands={enriched} entriesByBrandId={entriesByBrandId} />;
+
+  // The board's ranking is frozen per ISO week (see lib/weekly-snapshot.ts) —
+  // built once, the first time this week is seen, so an SE's queue order
+  // doesn't shift under them as scores change mid-week.
+  const currentWeek = isoWeek(new Date());
+  let snapshot = await getWeeklySnapshot(currentWeek).catch(() => null);
+  if (!snapshot) {
+    const bySe: Record<string, number[]> = {};
+    for (const se of SE_OWNERS) bySe[se] = rankForSnapshot(enriched, se, currentWeek);
+    snapshot = { week: currentWeek, bySe };
+    await setWeeklySnapshot(snapshot).catch((e) => console.error("Failed to persist weekly snapshot:", e));
+  }
+
+  return <WeeklyFocusPage initialBrands={enriched} entriesByBrandId={entriesByBrandId} snapshot={snapshot} />;
 }

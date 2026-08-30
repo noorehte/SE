@@ -158,6 +158,7 @@ export interface Brand {
   PYLON_SENTIMENT: string | null; // Pylon account's "Sentiment" custom field, matched by HUBSPOT_COMPANY_ID — null if no Pylon account or no sentiment set
   PYLON_LAST_COMMUNICATION_AT: string | null; // Pylon account's latest_customer_activity_time — null if no Pylon account or no activity on file
   PYLON_OPEN_ISSUES_90D: number | null; // Pylon account's "number_of_open_issues_last_90_days" custom field — null if no Pylon account or field unset
+  PYLON_ACCOUNT_ID: string | null; // Pylon's own account id — null if no Pylon account found
   RECURLY_STATE: string | null; // Recurly subscription state ("active" | "future" | "expired" | "failed" | "paused" | ...) for the brand's most recent subscription — null if no Recurly account/subscription found
   RECURLY_PLAN_NAME: string | null;
   RECURLY_AMOUNT: number | null;
@@ -191,6 +192,7 @@ export interface Brand {
   // "This Week" board controls (stored as field overrides):
   WEEKLY_FOCUS_PINNED: boolean;             // always show on the board this week, regardless of score
   WEEKLY_FOCUS_DISMISSED_WEEK: string | null; // ISO week (e.g. "2026-W35") the brand was dismissed for — stale once the week has passed
+  WEEKLY_FOCUS_DONE_WEEK: string | null;    // ISO week the brand was marked handled — still shown (collapsed), unlike dismissed
   // VIP-board-only Kanban column (SE-tracker control, stored as a field override) —
   // moves a brand out of its real PIPELINE_STATUS column into "A/B Testing" without
   // losing that real status, so it lands back in the right column once removed.
@@ -755,6 +757,7 @@ export async function fetchBrandsFromSources(): Promise<Brand[]> {
       PYLON_SENTIMENT: null as string | null,
       PYLON_LAST_COMMUNICATION_AT: null as string | null,
       PYLON_OPEN_ISSUES_90D: null as number | null,
+      PYLON_ACCOUNT_ID: null as string | null,
       RECURLY_STATE: null as string | null,
       RECURLY_PLAN_NAME: null as string | null,
       RECURLY_AMOUNT: null as number | null,
@@ -793,6 +796,7 @@ export async function fetchBrandsFromSources(): Promise<Brand[]> {
       FOLLOWUPS_DISABLED: f.FOLLOWUPS_DISABLED === "true",
       WEEKLY_FOCUS_PINNED: f.WEEKLY_FOCUS_PINNED === "true",
       WEEKLY_FOCUS_DISMISSED_WEEK: f.WEEKLY_FOCUS_DISMISSED_WEEK || null,
+      WEEKLY_FOCUS_DONE_WEEK: f.WEEKLY_FOCUS_DONE_WEEK || null,
     };
 
     // Churned = app-side discarded_at only (soft-deleted on health_brands).

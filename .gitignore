@@ -43,6 +43,7 @@ yarn-error.log*
 .dev-recurly-cache.json
 .dev-brands-cache.json
 .dev-cache-*.json
+.dev-weekly-snapshot.json
 
 # typescript
 *.tsbuildinfo
