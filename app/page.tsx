@@ -1,4 +1,4 @@
-import { getBrands } from "@/lib/metabase";
+import { getBrands } from "@/lib/get-brands";
 import { getAllScheduled } from "@/lib/scheduled-calls";
 import { getCaiReadyBrands, buildCaiLookup } from "@/lib/cai-sheet";
 import { getReachouts, buildReachoutLookup } from "@/lib/reachouts-sheet";

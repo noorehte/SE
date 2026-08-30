@@ -245,7 +245,14 @@ function computePipelineStatus(
   return "products_approved_needs_call";
 }
 
-export async function getBrands(): Promise<Brand[]> {
+// The actual data-fetching — no caching here. Deliberately kept free of any
+// fs/Vercel-KV import: this file (lib/metabase.ts) is imported by client
+// components for its types (Brand, PipelineStatus, etc.), and bundling a
+// Node-only module like fs/promises into it breaks the client build. The
+// cached, server-only entry point is getBrands() in lib/get-brands.ts, which
+// wraps this function — server code should import getBrands from there, not
+// call this directly.
+export async function fetchBrandsFromSources(): Promise<Brand[]> {
   const BRAND_FIELDS = [
     3382, // BRAND_ID
     3383, // BRAND_NAME
@@ -427,8 +434,13 @@ export async function getBrands(): Promise<Brand[]> {
   const pipelineCompanyIds = stgBrandRows
     .map((r: Record<string, unknown>) => r.HUBSPOT_COMPANY_ID as number | null)
     .filter((id: number | null): id is number => id != null);
-  const hubspotOwnerChecksByCompanyId = await getHubSpotOwnerChecksByCompanyId(pipelineCompanyIds);
-  const closeDatesByCompanyId = await getCloseDatesByCompanyId(pipelineCompanyIds);
+  // Independent of each other and of getAllOverrides() below (Notion) — run
+  // together rather than paying three sequential round-trips.
+  const [hubspotOwnerChecksByCompanyId, closeDatesByCompanyId, overrides] = await Promise.all([
+    getHubSpotOwnerChecksByCompanyId(pipelineCompanyIds),
+    getCloseDatesByCompanyId(pipelineCompanyIds),
+    getAllOverrides(),
+  ]);
 
   // Table 203 (stg-brands) is the comprehensive brand list — every brand flows in
   // here, including ones that never went through the onboarding portal. Table 447
@@ -673,7 +685,6 @@ export async function getBrands(): Promise<Brand[]> {
   }
 
   const now = Date.now();
-  const overrides = await getAllOverrides();
 
   function hubspotOwnerCheck(hubspotCompanyId: number | null) {
     return hubspotCompanyId != null ? hubspotOwnerChecksByCompanyId.get(hubspotCompanyId) : undefined;

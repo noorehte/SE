@@ -1,4 +1,4 @@
-import { getBrands } from "@/lib/metabase";
+import { getBrands } from "@/lib/get-brands";
 import { getCaiReadyBrands, buildCaiLookup } from "@/lib/cai-sheet";
 import { getReachouts, buildReachoutLookup } from "@/lib/reachouts-sheet";
 import { getSeSprintEntries, buildSeSprintLookup } from "@/lib/se-sprint-sheet";

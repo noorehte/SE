@@ -1,5 +1,6 @@
 import { setOverride, clearOverride } from "@/lib/overrides";
 import { PipelineStatus } from "@/lib/metabase";
+import { invalidateBrandsCache } from "@/lib/get-brands";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
@@ -21,5 +22,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 
+  // So the next getBrands() call (e.g. clicking Refresh) reflects this move
+  // immediately instead of waiting out the cache's TTL.
+  await invalidateBrandsCache().catch(() => {});
   return NextResponse.json({ ok: true });
 }

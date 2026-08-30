@@ -79,32 +79,42 @@ function findBucketLayouts(rows: string[][]): { headerRowIndex: number; buckets:
   return { headerRowIndex, buckets };
 }
 
+import { cached, invalidateCache } from "@/lib/server-cache";
+
+const REACHOUTS_CACHE_KEY = "reachouts";
+
+// The CSV export endpoint was hit fresh on every page load — cached briefly
+// (see lib/server-cache.ts) so repeated loads within the window reuse one
+// fetch. writeReachoutStatus() below invalidates this on a successful write
+// so an SE's edit shows up immediately rather than waiting out the TTL.
 export async function getReachouts(): Promise<ReachoutEntry[]> {
-  try {
-    const res = await fetch(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`, {
-      cache: "no-store",
-    });
-    if (!res.ok) return [];
-    const text = await res.text();
-    const rows = text.split("\n").map(parseCsvRow);
+  return cached(REACHOUTS_CACHE_KEY, 60, async () => {
+    try {
+      const res = await fetch(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return [];
+      const text = await res.text();
+      const rows = text.split("\n").map(parseCsvRow);
 
-    const { headerRowIndex, buckets } = findBucketLayouts(rows);
-    if (headerRowIndex === -1) return [];
+      const { headerRowIndex, buckets } = findBucketLayouts(rows);
+      if (headerRowIndex === -1) return [];
 
-    const entries: ReachoutEntry[] = [];
-    for (const { nameCol, emailedCol, sendLabel } of buckets) {
-      for (let r = headerRowIndex + 1; r < rows.length; r++) {
-        const name = (rows[r]?.[nameCol] ?? "").trim();
-        if (!name) continue;
-        const emailedRaw = emailedCol != null ? (rows[r]?.[emailedCol] ?? "").trim().toUpperCase() : "";
-        const emailed = emailedRaw === "Y" ? true : emailedRaw === "N" ? false : null;
-        entries.push({ name, emailed, sendLabel });
+      const entries: ReachoutEntry[] = [];
+      for (const { nameCol, emailedCol, sendLabel } of buckets) {
+        for (let r = headerRowIndex + 1; r < rows.length; r++) {
+          const name = (rows[r]?.[nameCol] ?? "").trim();
+          if (!name) continue;
+          const emailedRaw = emailedCol != null ? (rows[r]?.[emailedCol] ?? "").trim().toUpperCase() : "";
+          const emailed = emailedRaw === "Y" ? true : emailedRaw === "N" ? false : null;
+          entries.push({ name, emailed, sendLabel });
+        }
       }
+      return entries;
+    } catch {
+      return [];
     }
-    return entries;
-  } catch {
-    return [];
-  }
+  });
 }
 
 function columnToA1(col: number): string {
@@ -188,6 +198,7 @@ export async function writeReachoutStatus(
           valueInputOption: "RAW",
           requestBody: { values: [[emailed ? "Y" : "N"]] },
         });
+        await invalidateCache(REACHOUTS_CACHE_KEY).catch(() => {});
         return { success: true };
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };

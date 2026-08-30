@@ -1,4 +1,4 @@
-import { getBrands } from "@/lib/metabase";
+import { getBrands } from "@/lib/get-brands";
 import { getSeSprintEntries, buildSeSprintLookup, SeSprintEntry } from "@/lib/se-sprint-sheet";
 import { getPylonAccountDataByHubspotId } from "@/lib/pylon-sentiment";
 import WeeklyFocusPage from "@/components/SeSprintPage";

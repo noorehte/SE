@@ -41,6 +41,8 @@ yarn-error.log*
 .dev-followups.json
 .dev-pylon-account-data-cache.json
 .dev-recurly-cache.json
+.dev-brands-cache.json
+.dev-cache-*.json
 
 # typescript
 *.tsbuildinfo

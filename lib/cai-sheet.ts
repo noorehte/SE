@@ -19,21 +19,28 @@
 // }
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { cached } from "@/lib/server-cache";
+
 export interface CaiReadyEntry {
   name: string;
   type: "CAI" | "CAS";
 }
 
+// Apps Script web apps are slow (often 1-3s per call) and this was hit fresh
+// on every page load — cached briefly so repeated loads within the window
+// reuse one fetch. See lib/server-cache.ts.
 export async function getCaiReadyBrands(): Promise<CaiReadyEntry[]> {
   const url = process.env.CAI_SHEET_SCRIPT_URL;
   if (!url) return [];
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    const data = await res.json();
-    return (data.brands ?? []) as CaiReadyEntry[];
-  } catch {
-    return [];
-  }
+  return cached("cai-ready-brands", 60, async () => {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const data = await res.json();
+      return (data.brands ?? []) as CaiReadyEntry[];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /** Match sheet brand names to Metabase brand names (case-insensitive, ignoring punctuation) */

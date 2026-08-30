@@ -1,4 +1,5 @@
-import { getBrands, type Brand } from "@/lib/metabase";
+import { type Brand } from "@/lib/metabase";
+import { getBrands } from "@/lib/get-brands";
 import { buildTrackerRows } from "@/lib/followups/tracker";
 import FollowupTracker from "@/components/FollowupTracker";
 
