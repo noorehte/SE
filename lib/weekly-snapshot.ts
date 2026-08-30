@@ -61,3 +61,17 @@ export async function setWeeklySnapshot(snapshot: WeeklySnapshot): Promise<void>
     await fileWrite(store);
   }
 }
+
+// Clears a week's frozen ranking so it gets rebuilt from current scoring on
+// the next load — use after a scoring-logic change that should apply
+// retroactively to the in-progress week, not just future weeks. Not exposed
+// in the UI; run manually (e.g. via a one-off script) when needed.
+export async function clearWeeklySnapshot(week: string): Promise<void> {
+  if (weeklySnapshotUsesKv()) {
+    await kvClient().del(kvKey(week));
+  } else {
+    const store = await fileRead();
+    delete store[kvKey(week)];
+    await fileWrite(store);
+  }
+}

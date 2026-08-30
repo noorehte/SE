@@ -75,18 +75,9 @@ function NextSteps({ brand }: { brand: Brand }) {
   const steps: { label: string; href?: string }[] = [];
   const pylonUrl = pylonAccountUrl(brand);
   const isFrustrated = brand.PYLON_SENTIMENT === "high_risk_detractor" || brand.PYLON_SENTIMENT === "frustrated";
-  const hasTicketVolume = !!brand.PYLON_OPEN_ISSUES_90D && brand.PYLON_OPEN_ISSUES_90D >= 3;
 
-  // One Pylon step covers both signals when they overlap (a frustrated brand
-  // with high ticket volume shouldn't get two separate links to the same
-  // account) — the label names whichever combination applies.
-  if (isFrustrated || hasTicketVolume) {
-    const label = isFrustrated && hasTicketVolume
-      ? `Review Pylon — frustrated, ${brand.PYLON_OPEN_ISSUES_90D} open tickets`
-      : isFrustrated
-        ? "Review recent Pylon activity and check in"
-        : `Triage ${brand.PYLON_OPEN_ISSUES_90D} open tickets`;
-    steps.push({ label, href: pylonUrl ?? undefined });
+  if (isFrustrated) {
+    steps.push({ label: "Review recent Pylon activity and check in", href: pylonUrl ?? undefined });
   }
   if (brand.ON_SE_SPRINT_SHEET) {
     steps.push({ label: "Review the implementation request below" });

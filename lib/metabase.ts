@@ -157,7 +157,12 @@ export interface Brand {
   PDP_COUNT: number; // published, non-discarded products with a page URL
   PYLON_SENTIMENT: string | null; // Pylon account's "Sentiment" custom field, matched by HUBSPOT_COMPANY_ID — null if no Pylon account or no sentiment set
   PYLON_LAST_COMMUNICATION_AT: string | null; // Pylon account's latest_customer_activity_time — null if no Pylon account or no activity on file
-  PYLON_OPEN_ISSUES_90D: number | null; // Pylon account's "number_of_open_issues_last_90_days" custom field — null if no Pylon account or field unset
+  // Pylon account's "number_of_open_issues_last_90_days" custom field — null if no Pylon account or field unset.
+  // NOT reliable as "currently open ticket count" despite the name: spot-checked
+  // against the real API, one account showed 1 here while directly counting
+  // issues with no resolution_time in the same window found 21. Not used for
+  // scoring/display in lib/weekly-focus.ts as a result — see that file's header.
+  PYLON_OPEN_ISSUES_90D: number | null;
   PYLON_ACCOUNT_ID: string | null; // Pylon's own account id — null if no Pylon account found
   RECURLY_STATE: string | null; // Recurly subscription state ("active" | "future" | "expired" | "failed" | "paused" | ...) for the brand's most recent subscription — null if no Recurly account/subscription found
   RECURLY_PLAN_NAME: string | null;

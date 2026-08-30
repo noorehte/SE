@@ -1,10 +1,18 @@
 // Scoring for the "This Week" board (formerly SE Sprint) — ranks each SE's
 // brands by how much they need attention this week, combining signals that
-// used to only live on separate pages: Pylon sentiment/ticket volume, the
-// collab-request queue, and how long a brand's been stuck. A brand can match
-// more than one reason at once (e.g. frustrated AND stuck) — reasons() below
-// returns every reason that applies so the UI can show them all, not just
-// whichever scored highest.
+// used to only live on separate pages: Pylon sentiment, the collab-request
+// queue, and how long a brand's been stuck. A brand can match more than one
+// reason at once (e.g. frustrated AND stuck) — reasons() below returns every
+// reason that applies so the UI can show them all, not just whichever scored
+// highest.
+//
+// Deliberately NOT using Pylon's "number_of_open_issues_last_90_days" custom
+// field as a signal — despite the name, it does not reliably track currently-
+// open tickets. Spot-checked against a real account: the field reported 1,
+// while directly counting issues with no resolution_time set in the same
+// 90-day window found 21 genuinely open. Re-add a ticket-volume signal only
+// once it's computed directly from /issues (filtering on resolution_time),
+// not from this field.
 import { Brand, isBrandStuck } from "./metabase";
 
 export interface WeeklyFocusReason {
@@ -21,12 +29,6 @@ const SENTIMENT_WEIGHT: Record<string, number> = {
   advocate: -15,
 };
 
-// Open tickets are a graduated signal, not a threshold — more open issues in
-// the last 90 days means more SE attention needed, capped so one extreme
-// outlier account doesn't dominate every lane.
-const OPEN_ISSUES_POINTS_PER_TICKET = 6;
-const OPEN_ISSUES_CAP = 40;
-
 const COLLAB_REQUEST_POINTS = 30;
 const STUCK_POINTS_PER_DAY = 1.5;
 const STUCK_POINTS_CAP = 30;
@@ -34,9 +36,6 @@ const STUCK_POINTS_CAP = 30;
 export function weeklyFocusScore(brand: Brand): number {
   let score = 0;
   if (brand.PYLON_SENTIMENT) score += SENTIMENT_WEIGHT[brand.PYLON_SENTIMENT] ?? 0;
-  if (brand.PYLON_OPEN_ISSUES_90D) {
-    score += Math.min(brand.PYLON_OPEN_ISSUES_90D * OPEN_ISSUES_POINTS_PER_TICKET, OPEN_ISSUES_CAP);
-  }
   if (brand.ON_SE_SPRINT_SHEET) score += COLLAB_REQUEST_POINTS;
   if (isBrandStuck(brand)) {
     score += Math.min(brand.DAYS_IN_STATUS * STUCK_POINTS_PER_DAY, STUCK_POINTS_CAP);
@@ -50,9 +49,6 @@ export function weeklyFocusReasons(brand: Brand): WeeklyFocusReason[] {
     reasons.push({ key: "high_risk", label: "High risk", color: "#e05c5c" });
   } else if (brand.PYLON_SENTIMENT === "frustrated") {
     reasons.push({ key: "frustrated", label: "Frustrated", color: "#e9a84c" });
-  }
-  if (brand.PYLON_OPEN_ISSUES_90D && brand.PYLON_OPEN_ISSUES_90D >= 3) {
-    reasons.push({ key: "tickets", label: `${brand.PYLON_OPEN_ISSUES_90D} open tickets`, color: "#e9a84c" });
   }
   if (brand.ON_SE_SPRINT_SHEET) {
     reasons.push({ key: "collab_request", label: "Collab request", color: "#72a4bf" });
