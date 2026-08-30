@@ -67,12 +67,18 @@ function ReasonBadges({ reasons }: { reasons: WeeklyFocusReason[] }) {
   );
 }
 
+interface NextStep {
+  label: string;
+  href?: string;
+}
+
 // One concrete next step per reason a brand is on the board — what an SE
 // should actually go do, not just a restatement of the badge. Falls back to
 // the pipeline's own blocking-item text (BrandCard.BLOCKING_ITEMS) when a
-// reason doesn't have a more specific action of its own.
-function NextSteps({ brand }: { brand: Brand }) {
-  const steps: { label: string; href?: string }[] = [];
+// reason doesn't have a more specific action of its own. Shared by the card's
+// one-line blurb and the detail panel's full list, so they never drift.
+function getNextSteps(brand: Brand): NextStep[] {
+  const steps: NextStep[] = [];
   const pylonUrl = pylonAccountUrl(brand);
   const isFrustrated = brand.PYLON_SENTIMENT === "high_risk_detractor" || brand.PYLON_SENTIMENT === "frustrated";
 
@@ -86,6 +92,11 @@ function NextSteps({ brand }: { brand: Brand }) {
   if (blocking) {
     steps.push({ label: blocking });
   }
+  return steps;
+}
+
+function NextSteps({ brand }: { brand: Brand }) {
+  const steps = getNextSteps(brand);
   if (steps.length === 0) return null;
 
   return (
@@ -251,6 +262,9 @@ function FocusCard({ brand, done, onClick, onTogglePin, onToggleDone, onDismiss 
   const col = ALL_COLUMNS.find((c) => c.id === brand.PIPELINE_STATUS);
   const reasons = weeklyFocusReasons(brand);
   const code = collaboratorCode(brand);
+  // Highest-priority next step only, one line — the panel shows the full
+  // list; the card is for scanning the whole lane without opening anything.
+  const topStep = getNextSteps(brand)[0];
   const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
 
   return (
@@ -280,6 +294,15 @@ function FocusCard({ brand, done, onClick, onTogglePin, onToggleDone, onDismiss 
 
       {!done && (
         <div className="mb-2.5"><ReasonBadges reasons={reasons} /></div>
+      )}
+
+      {!done && topStep && (
+        <div className="mb-2.5" style={{
+          fontSize: "0.75rem", color: "rgba(255,255,255,0.5)", overflow: "hidden",
+          textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }} title={topStep.label}>
+          {topStep.label}
+        </div>
       )}
 
       <div className="flex items-center justify-between" style={{ fontSize: "0.75rem" }}>
