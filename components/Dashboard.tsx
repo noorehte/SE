@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, Fragment } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
-import BrandCard, { SEGMENT_STYLES, SENTIMENT_STYLES } from "./BrandCard";
+import { BadgeStatus, ExecStatus, getBadgeStatus, getExecStatus, getExecStatusDetail, getRegressedParts, getReadyDate, EXEC_STATUS_ORDER, EXEC_STATUS_STYLES, EXEC_STATUS_DISPLAY_ORDER } from "@/lib/liveStatus";
+import BrandCard, { SEGMENT_STYLES, AbTestingToggle, SENTIMENT_STYLES } from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
-import { Download, LayoutGrid, List, RefreshCw, Search } from "lucide-react";
+import ExecOverview from "./ExecOverview";
+import { Download, LayoutGrid, List, RefreshCw, Search, Columns3, ArrowDownWideNarrow, ArrowUpNarrowWide, Briefcase, Gauge } from "lucide-react";
 import Sidebar from "./Sidebar";
 import GoogleConnectStatus from "./GoogleConnectStatus";
 
@@ -50,6 +52,15 @@ export const ALL_COLUMNS: { id: PipelineStatus; label: string; accent: string }[
 // no way to filter it back out.
 export const SIGNED_ON_COLUMNS = ALL_COLUMNS.filter((c) => c.id !== "churned");
 
+// A Kanban column id can be a real PIPELINE_STATUS, or this VIP-board-only
+// virtual column — dropping a card here just sets the AB_TESTING flag rather
+// than changing the brand's real status, so it lands back in the right
+// column once removed. See Brand.AB_TESTING in lib/metabase.ts.
+export type KanbanColumnId = PipelineStatus | "ab_testing";
+const AB_TESTING_COLUMN: { id: KanbanColumnId; label: string; accent: string } = {
+  id: "ab_testing", label: "A/B Testing", accent: "#e879a8",
+};
+
 const SE_OWNERS = ["maha", "noor", "naumaan", "andres"];
 
 function csvCell(value: string): string {
@@ -83,6 +94,46 @@ function exportBrandsCsv(brands: Brand[], columns: { id: PipelineStatus; label: 
   URL.revokeObjectURL(url);
 }
 
+// Mirrors the columns shown in ExecOverviewView exactly (Brand, Status,
+// A/B Testing, Ready Date, Close Date, Last Call) — those helpers
+// (EXEC_STATUS_STYLES, getExecStatus, etc.) are defined further down this
+// file but that's fine, this only runs on click, well after module init.
+function exportExecOverviewCsv(brands: Brand[], scheduledCalls: Record<string, ScheduledCall>) {
+  const header = ["Brand", "Status", "A/B Testing", "Ready Date", "Close Date", "Last Call"];
+  const rows = brands.map((b) => {
+    const execStatusKey = getExecStatus(b);
+    const execStatus = EXEC_STATUS_STYLES[execStatusKey];
+    const readyDate = getReadyDate(b);
+    const sc = scheduledCalls[String(b.BRAND_ID)];
+    const lastCallLabel = !sc
+      ? "None scheduled"
+      : sc.action === "webinar_sheet"
+        ? "On webinar list"
+        : sc.callDate
+          ? new Date(sc.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+          : "Scheduled";
+    return [
+      csvCell(b.BRAND_NAME),
+      // Blank for "not ready" brands, same as the on-screen dash — nothing
+      // actionable yet, so no status text at all rather than a hollow label.
+      csvCell(execStatusKey === "not_ready" ? "" : `${execStatus.label} — ${getExecStatusDetail(b)}`),
+      csvCell(b.AB_TESTING ? (b.AB_TESTING_NOTES ? `On — ${b.AB_TESTING_NOTES}` : "On") : "Off"),
+      csvCell(readyDate ? new Date(readyDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Not yet"),
+      csvCell(b.CLOSE_DATE ? new Date(b.CLOSE_DATE).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"),
+      csvCell(lastCallLabel),
+    ];
+  });
+  const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `se-pipeline-exec-overview-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // Segment options for the filter dropdown — same keys BrandCard uses to badge
 // each card, so "Strategic" here means exactly what the colored chip means.
 const SEGMENTS = Object.keys(SEGMENT_STYLES);
@@ -100,14 +151,40 @@ function needsOutreach(brand: Brand, scheduledCalls: Record<string, ScheduledCal
   return OUTREACH_STATUSES.includes(brand.PIPELINE_STATUS) && !scheduledCalls[String(brand.BRAND_ID)];
 }
 
-export default function Dashboard({ initialBrands, initialScheduledCalls }: { initialBrands: Brand[]; initialScheduledCalls: Record<string, ScheduledCall> }) {
+export default function Dashboard({
+  initialBrands,
+  initialScheduledCalls,
+  title = "SE pipeline",
+  subtitle = "Brand portal checklist → automated status movement",
+  activeNavKey = "pipeline",
+  refetchSegment,
+  showAbTestingColumn = false,
+  showWidgetStatusView = false,
+  showExecOverview = false,
+  hideKanbanTable = false,
+}: {
+  initialBrands: Brand[];
+  initialScheduledCalls: Record<string, ScheduledCall>;
+  title?: string;
+  subtitle?: string;
+  activeNavKey?: string;
+  refetchSegment?: string;
+  showAbTestingColumn?: boolean;
+  showWidgetStatusView?: boolean;
+  showExecOverview?: boolean;
+  // VIP-only: hides the Kanban/Table views and shows the leadership "Exec
+  // Overview" dashboard (see components/ExecOverview.tsx) as the default
+  // view instead — Kanban/Table stay untouched on the Pipeline ("/") and
+  // Table view ("/brands") pages, which never pass this prop.
+  hideKanbanTable?: boolean;
+}) {
   const [brands, setBrands] = useState(initialBrands);
   const [scheduledCalls] = useState(initialScheduledCalls);
-  const [view, setView] = useState<"kanban" | "table">("kanban");
+  const [view, setView] = useState<"kanban" | "table" | "widgets" | "exec" | "leadership">(hideKanbanTable ? "leadership" : "kanban");
   const [seFilter, setSeFilter] = useState<string>("all");
   const [segmentFilter, setSegmentFilter] = useState<string>("all");
   const [sentimentFilter, setSentimentFilter] = useState<string>("all");
-  const [columnFilter, setColumnFilter] = useState<PipelineStatus | null>(null);
+  const [columnFilter, setColumnFilter] = useState<KanbanColumnId | null>(null);
   const [statFilter, setStatFilter] = useState<"all" | "in_progress" | "stuck" | "live" | "needs_outreach">("all");
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const [loading, setLoading] = useState(false);
@@ -187,11 +264,21 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
   // brands still included) rather than `filtered`, since stat/widget/date
   // filters don't apply meaningfully to a brand that's no longer active.
   const churnedColumn = ALL_COLUMNS.find((c) => c.id === "churned")!;
-  const kanbanColumns = [...activeColumns, churnedColumn];
+  // A/B Testing sits right after Collaborator Code Brand rather than at the
+  // end — found by id rather than a fixed index, since activeColumns' shape
+  // changes between the 5-column default and "View all"'s wider set.
+  const kanbanColumns = (() => {
+    if (!showAbTestingColumn) return [...activeColumns, churnedColumn];
+    const collabIdx = activeColumns.findIndex((c) => c.id === "collaborator_code_brand");
+    const insertAt = collabIdx === -1 ? activeColumns.length : collabIdx + 1;
+    return [...activeColumns.slice(0, insertAt), AB_TESTING_COLUMN, ...activeColumns.slice(insertAt), churnedColumn];
+  })();
   const churnedBrands = sentimentMatched.filter((b) => b.PIPELINE_STATUS === "churned");
   const kanbanBrands = [...filtered, ...churnedBrands];
 
-  const visibleBrands = columnFilter ? filtered.filter((b) => b.PIPELINE_STATUS === columnFilter) : filtered;
+  const visibleBrands = columnFilter
+    ? filtered.filter((b) => columnFilter === "ab_testing" ? b.AB_TESTING : b.PIPELINE_STATUS === columnFilter)
+    : filtered;
   const stuck = segmentFiltered.filter(isBrandStuck).length;
   const live = segmentFiltered.filter((b) => b.PIPELINE_STATUS === "live").length;
 
@@ -200,42 +287,98 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
     try {
       const res = await fetch("/api/brands");
       const data = await res.json();
-      setBrands(data);
+      setBrands(refetchSegment ? data.filter((b: Brand) => b.KIND?.toLowerCase() === refetchSegment) : data);
     } finally {
       setLoading(false);
     }
   }
 
-  async function moveBrand(brandId: number, newStatus: PipelineStatus) {
-    const prevStatus = brands.find((b) => b.BRAND_ID === brandId)?.PIPELINE_STATUS;
+  async function moveBrand(brandId: number, newStatus: KanbanColumnId) {
+    const prevBrand = brands.find((b) => b.BRAND_ID === brandId);
+    if (!prevBrand) return;
+    const prevStatus = prevBrand.PIPELINE_STATUS;
+    const wasAbTesting = prevBrand.AB_TESTING;
+
+    // Dropping on "A/B Testing" only sets the flag — the brand's real
+    // PIPELINE_STATUS is left untouched so it lands back in the right real
+    // column once removed from A/B Testing.
+    if (newStatus === "ab_testing") {
+      setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, AB_TESTING: true } : b)));
+      try {
+        const res = await fetch("/api/field-overrides", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brandId, field: "AB_TESTING", value: "true" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!data.ok) throw new Error(data.errors?.join("; ") ?? "Save failed");
+      } catch (e) {
+        setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, AB_TESTING: wasAbTesting } : b)));
+        alert(`Couldn't save A/B Testing move: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return;
+    }
+
+    // Dropping on a real status column clears A/B Testing (if set) alongside
+    // the normal status change, so the card doesn't stay hidden from the
+    // column it was just dropped on (see KanbanView's AB_TESTING exclusion).
     setBrands((prev) =>
-      prev.map((b) => (b.BRAND_ID === brandId ? { ...b, PIPELINE_STATUS: newStatus } : b))
+      prev.map((b) => (b.BRAND_ID === brandId ? { ...b, PIPELINE_STATUS: newStatus, AB_TESTING: false } : b))
     );
     try {
-      const res = await fetch("/api/overrides", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId, status: newStatus }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Save failed (${res.status})`);
+      const calls = [
+        fetch("/api/overrides", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brandId, status: newStatus }),
+        }),
+      ];
+      if (wasAbTesting) {
+        calls.push(fetch("/api/field-overrides", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brandId, field: "AB_TESTING", value: "" }),
+        }));
+      }
+      const results = await Promise.all(calls);
+      for (const res of results) {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? body.errors?.join("; ") ?? `Save failed (${res.status})`);
+        }
       }
     } catch (e) {
       // The optimistic move above was never persisted — roll it back so the
       // board reflects reality instead of quietly reverting on next refresh
       // with no explanation.
-      if (prevStatus) {
-        setBrands((prev) =>
-          prev.map((b) => (b.BRAND_ID === brandId ? { ...b, PIPELINE_STATUS: prevStatus } : b))
-        );
-      }
+      setBrands((prev) =>
+        prev.map((b) => (b.BRAND_ID === brandId ? { ...b, PIPELINE_STATUS: prevStatus, AB_TESTING: wasAbTesting } : b))
+      );
       alert(`Couldn't save status change: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
-  function toggleColumnFilter(id: PipelineStatus) {
+  function toggleColumnFilter(id: KanbanColumnId) {
     setColumnFilter((prev) => (prev === id ? null : id));
+  }
+
+  // Explicit on/off control for AB_TESTING (separate from the Kanban column drag).
+  async function toggleAbTesting(brandId: number, newValue: boolean) {
+    const brand = brands.find((b) => b.BRAND_ID === brandId);
+    if (!brand) return;
+    setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, AB_TESTING: newValue } : b)));
+    try {
+      const res = await fetch("/api/field-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, field: "AB_TESTING", value: newValue ? "true" : "" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!data.ok) throw new Error(data.errors?.join("; ") ?? `Save failed (${res.status})`);
+    } catch (e) {
+      setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, AB_TESTING: brand.AB_TESTING } : b)));
+      alert(`Couldn't save A/B Testing toggle: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   // Manual "add to SE Sprint" toggle — stored as a Notion field override
@@ -266,15 +409,15 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
 
   return (
     <div className="flex min-h-screen" style={{ background: "#0d1b26", color: "#fff" }}>
-      <Sidebar active="pipeline" />
+      <Sidebar active={activeNavKey} />
 
       {/* Main */}
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Top bar */}
         <div className="px-8 py-5 flex items-start justify-between flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
           <div>
-            <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff", lineHeight: 1.2 }}>SE pipeline</h1>
-            <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>Brand portal checklist → automated status movement</p>
+            <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff", lineHeight: 1.2 }}>{title}</h1>
+            <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>{subtitle}</p>
           </div>
           <div className="flex items-center gap-3 mt-1 flex-wrap justify-end">
             <GoogleConnectStatus />
@@ -355,14 +498,35 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
               {SE_OWNERS.map((se) => <option key={se} value={se}>{se}</option>)}
             </select>
             <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.12)" }}>
-              <button onClick={() => setView("kanban")} className="px-3 py-2 flex items-center gap-1.5 text-sm transition-colors"
-                style={{ background: view === "kanban" ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)", color: view === "kanban" ? "#fff" : "rgba(255,255,255,0.4)" }}>
-                <LayoutGrid size={14} /> Kanban
-              </button>
-              <button onClick={() => setView("table")} className="px-3 py-2 flex items-center gap-1.5 text-sm transition-colors"
-                style={{ background: view === "table" ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)", color: view === "table" ? "#fff" : "rgba(255,255,255,0.4)" }}>
-                <List size={14} /> Table
-              </button>
+              {hideKanbanTable ? (
+                <button onClick={() => setView("leadership")} className="px-3 py-2 flex items-center gap-1.5 text-sm transition-colors"
+                  style={{ background: view === "leadership" ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)", color: view === "leadership" ? "#fff" : "rgba(255,255,255,0.4)" }}>
+                  <Gauge size={14} /> Exec Overview
+                </button>
+              ) : (
+                <>
+                  <button onClick={() => setView("kanban")} className="px-3 py-2 flex items-center gap-1.5 text-sm transition-colors"
+                    style={{ background: view === "kanban" ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)", color: view === "kanban" ? "#fff" : "rgba(255,255,255,0.4)" }}>
+                    <LayoutGrid size={14} /> Kanban
+                  </button>
+                  <button onClick={() => setView("table")} className="px-3 py-2 flex items-center gap-1.5 text-sm transition-colors"
+                    style={{ background: view === "table" ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)", color: view === "table" ? "#fff" : "rgba(255,255,255,0.4)" }}>
+                    <List size={14} /> Table
+                  </button>
+                </>
+              )}
+              {showWidgetStatusView && (
+                <button onClick={() => setView("widgets")} className="px-3 py-2 flex items-center gap-1.5 text-sm transition-colors"
+                  style={{ background: view === "widgets" ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)", color: view === "widgets" ? "#fff" : "rgba(255,255,255,0.4)" }}>
+                  <Columns3 size={14} /> Widget Status
+                </button>
+              )}
+              {showExecOverview && (
+                <button onClick={() => setView("exec")} className="px-3 py-2 flex items-center gap-1.5 text-sm transition-colors"
+                  style={{ background: view === "exec" ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)", color: view === "exec" ? "#fff" : "rgba(255,255,255,0.4)" }}>
+                  <Briefcase size={14} /> {hideKanbanTable ? "SE Overview" : "Exec Overview"}
+                </button>
+              )}
             </div>
             <button onClick={refresh} disabled={loading} className="p-2 rounded-lg disabled:opacity-40"
               style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.12)" }}>
@@ -453,10 +617,17 @@ export default function Dashboard({ initialBrands, initialScheduledCalls }: { in
               onMove={moveBrand}
               onCardClick={setSelectedBrand}
               onHeaderClick={toggleColumnFilter}
+              onToggleAbTesting={toggleAbTesting}
               onToggleSeSprint={toggleSeSprint}
             />
-          ) : (
+          ) : view === "table" ? (
             <TableView brands={visibleBrands} columns={activeColumns} scheduledCalls={scheduledCalls} onMove={moveBrand} onRowClick={setSelectedBrand} />
+          ) : view === "widgets" ? (
+            <WidgetStatusView brands={segmentFiltered} onCardClick={setSelectedBrand} />
+          ) : view === "leadership" ? (
+            <ExecOverview brands={segmentFiltered} onSelectBrand={setSelectedBrand} />
+          ) : (
+            <ExecOverviewView brands={segmentFiltered} scheduledCalls={scheduledCalls} onRowClick={setSelectedBrand} onToggleAbTesting={toggleAbTesting} />
           )}
         </div>
 
@@ -501,30 +672,50 @@ function KanbanView({
   onMove,
   onCardClick,
   onHeaderClick,
+  onToggleAbTesting,
   onToggleSeSprint,
 }: {
   brands: Brand[];
-  columns: { id: PipelineStatus; label: string; accent: string }[];
-  columnFilter: PipelineStatus | null;
+  columns: { id: KanbanColumnId; label: string; accent: string }[];
+  columnFilter: KanbanColumnId | null;
   scheduledCalls: Record<string, ScheduledCall>;
-  onMove: (brandId: number, status: PipelineStatus) => void;
+  onMove: (brandId: number, status: KanbanColumnId) => void;
   onCardClick: (brand: Brand) => void;
-  onHeaderClick: (id: PipelineStatus) => void;
+  onHeaderClick: (id: KanbanColumnId) => void;
+  onToggleAbTesting: (brandId: number, newValue: boolean) => void;
   onToggleSeSprint: (brandId: number, next: boolean) => void;
 }) {
   const dragBrandId = useRef<number | null>(null);
-  const [dragOver, setDragOver] = useState<PipelineStatus | null>(null);
+  const [dragOver, setDragOver] = useState<KanbanColumnId | null>(null);
+  // Per-column sort direction over DAYS_IN_STATUS — defaults to "desc" (longest
+  // in status first, i.e. most overdue), but any column can be flipped to
+  // "asc" (most recently entered first) independently of the others.
+  const [sortDir, setSortDir] = useState<Partial<Record<KanbanColumnId, "asc" | "desc">>>({});
+
+  function toggleSortDir(colId: KanbanColumnId) {
+    setSortDir((prev) => ({ ...prev, [colId]: (prev[colId] ?? "desc") === "desc" ? "asc" : "desc" }));
+  }
 
   const visibleColumns = columnFilter ? columns.filter((c) => c.id === columnFilter) : columns;
+  // Only the VIP board's columns include "ab_testing" — use that as the
+  // signal for whether cards should offer the A/B Testing notes toggle at all.
+  const showAbTesting = columns.some((c) => c.id === "ab_testing");
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
       {visibleColumns.map((col) => {
-        // Longest-in-status first — surfaces the brands most overdue for
-        // attention (e.g. "was live" the longest) at the top of each column,
-        // instead of whatever order the underlying query happened to return.
-        const colBrands = brands.filter((b) => b.PIPELINE_STATUS === col.id)
-          .sort((a, b) => b.DAYS_IN_STATUS - a.DAYS_IN_STATUS);
+        // Defaults to longest-in-status first — surfaces the brands most
+        // overdue for attention (e.g. "was live" the longest) at the top of
+        // each column, instead of whatever order the underlying query
+        // happened to return. Flippable per-column via the sort button below.
+        // A brand with AB_TESTING set is pulled out of its real status column
+        // and shown only under "A/B Testing" (see moveBrand) — it lands back
+        // here once that flag clears.
+        const dir = sortDir[col.id] ?? "desc";
+        const colBrands = (col.id === "ab_testing"
+          ? brands.filter((b) => b.AB_TESTING)
+          : brands.filter((b) => b.PIPELINE_STATUS === col.id && !b.AB_TESTING)
+        ).sort((a, b) => (dir === "desc" ? b.DAYS_IN_STATUS - a.DAYS_IN_STATUS : a.DAYS_IN_STATUS - b.DAYS_IN_STATUS));
         const totalCount = colBrands.length;
         const isOver = dragOver === col.id;
         const isFiltered = columnFilter === col.id;
@@ -546,8 +737,15 @@ function KanbanView({
               <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: col.accent }} />
               <span style={{ fontSize: "1.05rem", fontWeight: 700, color: "#fff" }}>{col.label}</span>
               <button
+                onClick={() => toggleSortDir(col.id)}
+                className="ml-auto p-1 rounded-md hover:opacity-80 transition-opacity"
+                title={dir === "desc" ? "Sorted: longest in status first — click for most recent first" : "Sorted: most recent first — click for longest in status first"}
+                style={{ color: "rgba(255,255,255,0.35)" }}>
+                {dir === "desc" ? <ArrowDownWideNarrow size={13} /> : <ArrowUpNarrowWide size={13} />}
+              </button>
+              <button
                 onClick={() => onHeaderClick(col.id)}
-                className="ml-auto px-2 py-0.5 rounded-full transition-colors"
+                className="px-2 py-0.5 rounded-full transition-colors"
                 title={isFiltered ? "Show all columns" : "Filter to this column"}
                 style={{
                   fontSize: "0.8rem",
@@ -568,7 +766,7 @@ function KanbanView({
                   onClick={() => onCardClick(brand)}
                   className="cursor-pointer active:cursor-grabbing"
                   style={{ cursor: "grab" }}>
-                  <BrandCard brand={brand} accent={col.accent} scheduledCall={scheduledCalls[String(brand.BRAND_ID)] ?? null} onToggleSeSprint={onToggleSeSprint} />
+                  <BrandCard brand={brand} accent={col.accent} scheduledCall={scheduledCalls[String(brand.BRAND_ID)] ?? null} showAbTesting={showAbTesting} onToggleAbTesting={onToggleAbTesting} onToggleSeSprint={onToggleSeSprint} />
                 </div>
               ))}
               {colBrands.length === 0 && (
@@ -785,6 +983,482 @@ function TableView({
           })}
         </tbody>
       </table>
+      </div>
+    </div>
+  );
+}
+
+const BADGE_STATUS_COLUMNS: { id: BadgeStatus; label: string; accent: string }[] = [
+  { id: "not_live", label: "Not Live",          accent: "#5a6b78" },
+  { id: "ready",    label: "Ready to go live",  accent: "#e9a84c" },
+  { id: "live",     label: "Live",              accent: "#4caf82" },
+  { id: "was_live", label: "Was Live",          accent: "#e05c5c" },
+];
+
+// Widget type keys per badge — Reviews/CAI mirror the same grouping metabase.ts
+// uses for REVIEWS_IMPLEMENTED/CAI_IMPLEMENTED. "Clinicians Choice" combines
+// quant (Embedded) + sticker (Banner) into one board — showTypeTag surfaces
+// which of the two is actually live/was live per brand in that board's cards,
+// since either alone counts but which one can still matter operationally.
+// readyDate pulls the matching *_READY_DATE field already on Brand — same
+// field the exec Ready Date column and follow-up automation use — so "ready
+// to go live" here means exactly what it means everywhere else in the app.
+const BADGE_GROUPS: { key: string; label: string; types: string[]; showTypeTag?: boolean; readyDate: (b: Brand) => string | null }[] = [
+  { key: "reviews",           label: "Reviews",           types: ["qual"], readyDate: (b) => b.REVIEWS_READY_DATE },
+  { key: "cai",               label: "CAI",               types: ["gpt", "analysis", "gpt_s"], readyDate: (b) => b.CAI_READY_DATE },
+  { key: "clinicians_choice", label: "Clinicians Choice", types: ["quant", "sticker"], showTypeTag: true, readyDate: (b) => b.BADGE_READY_DATE },
+];
+
+// Which specific type(s) within a multi-type group are driving a "live" or
+// "was_live" status — e.g. a Clinicians Choice card might be live via
+// "sticker", "quant", or both.
+function getLiveTypeTag(brand: Brand, types: string[], status: BadgeStatus): string | null {
+  if (status !== "live" && status !== "was_live") return null;
+  const statuses = brand.WIDGET_STATUSES;
+  const matching = types.filter((t) =>
+    status === "live" ? statuses?.[t]?.isLive : (statuses?.[t]?.wentLiveAt && !statuses?.[t]?.isLive)
+  );
+  return matching.length ? matching.join(", ") : null;
+}
+
+// Read-only by design — unlike PIPELINE_STATUS, a widget's live/was-live/not-live
+// state is derived entirely from real Grafana view data, so there's nothing for
+// an SE to drag between columns here.
+function WidgetStatusView({ brands, onCardClick }: { brands: Brand[]; onCardClick: (brand: Brand) => void }) {
+  return (
+    <div className="flex flex-col gap-6">
+      {BADGE_GROUPS.map((group) => {
+        const columns = BADGE_STATUS_COLUMNS.map((col) => ({
+          ...col,
+          brands: brands
+            .filter((b) => getBadgeStatus(b, group.types, group.readyDate(b)) === col.id)
+            .sort((a, b) => a.BRAND_NAME.localeCompare(b.BRAND_NAME)),
+        }));
+
+        return (
+          <div key={group.key} className="rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "1.1rem", fontWeight: 700, color: "#fff", marginBottom: "14px" }}>
+              {group.label}
+            </div>
+            <div className="grid grid-cols-4 gap-4">
+              {columns.map((col) => (
+                <div key={col.id}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: col.accent }} />
+                    <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#fff" }}>{col.label}</span>
+                    <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)" }}>{col.brands.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-1.5 rounded-lg p-2 min-h-20 max-h-[420px] overflow-y-auto"
+                    style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    {col.brands.map((b) => {
+                      const typeTag = group.showTypeTag ? getLiveTypeTag(b, group.types, col.id) : null;
+                      return (
+                        <button key={b.BRAND_ID} onClick={() => onCardClick(b)}
+                          className="text-left px-2.5 py-1.5 rounded-lg hover:opacity-80 transition-opacity"
+                          style={{ background: "rgba(255,255,255,0.05)", borderLeft: `2px solid ${col.accent}`, fontSize: "0.8rem", color: "#fff" }}>
+                          {b.BRAND_NAME}
+                          {typeTag && (
+                            <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.72rem" }}> ({typeTag})</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    {col.brands.length === 0 && (
+                      <div className="text-center py-4" style={{ color: "rgba(255,255,255,0.15)", fontSize: "0.75rem" }}>None</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Sub-orders Partial rows: 1 for "everything pending is just ready and
+// waiting to be flipped on" (an SE can act on this in five minutes), 0 for
+// "at least one piece doesn't even have a ready date yet" (still pending on
+// our end — e.g. reviews not yet collected/processed, not something the
+// brand itself is blocking) — so the latter always sinks toward the bottom
+// of the Partial group instead of being interleaved with the more
+// actionable rows.
+function getPartialPriority(brand: Brand): number {
+  const badgeStatus = getBadgeStatus(brand, ["quant", "sticker"], brand.BADGE_READY_DATE);
+  const reviewsStatus = getBadgeStatus(brand, ["qual"], brand.REVIEWS_READY_DATE);
+  const caiExpected = brand.CAI_READY_DATE != null;
+  const caiStatus = caiExpected ? getBadgeStatus(brand, ["gpt", "analysis", "gpt_s"], brand.CAI_READY_DATE) : null;
+  const pending = [badgeStatus, reviewsStatus, ...(caiStatus ? [caiStatus] : [])].filter((s) => s !== "live");
+  return pending.some((s) => s === "not_live") ? 0 : 1;
+}
+
+// Which pending piece(s) don't even have a ready date yet — named directly
+// (e.g. "Reviews") rather than a vague "waiting on the brand," since a
+// missing ready date is almost always work still pending on our side.
+function getPartialNotReadyParts(brand: Brand): string[] {
+  const badgeStatus = getBadgeStatus(brand, ["quant", "sticker"], brand.BADGE_READY_DATE);
+  const reviewsStatus = getBadgeStatus(brand, ["qual"], brand.REVIEWS_READY_DATE);
+  const caiExpected = brand.CAI_READY_DATE != null;
+  const caiStatus = caiExpected ? getBadgeStatus(brand, ["gpt", "analysis", "gpt_s"], brand.CAI_READY_DATE) : null;
+  const parts: { name: string; status: BadgeStatus }[] = [
+    { name: "Badge", status: badgeStatus },
+    { name: "Reviews", status: reviewsStatus },
+    ...(caiStatus ? [{ name: "CAI/CAS", status: caiStatus }] : []),
+  ];
+  return parts.filter((p) => p.status === "not_live").map((p) => p.name);
+}
+
+// The visible label for a row's sub-group within Partial / Needs Attention —
+// null for every other tier, since only these two get sub-grouped.
+function getSubGroupLabel(status: ExecStatus, brand: Brand): string | null {
+  if (status === "partial") {
+    if (getPartialPriority(brand) === 1) return "Everything ready — not fully live yet";
+    const notReady = getPartialNotReadyParts(brand);
+    return notReady.length ? `${notReady.join(" + ")} not ready yet` : "Not ready yet";
+  }
+  if (status === "needs_attention") return getRegressedParts(brand).length >= 2 ? "2+ things down" : "1 thing down";
+  return null;
+}
+
+// Same live-combo phrasing as getExecStatusDetail, but for a single product's
+// TOP_PDP signals rather than the brand-level rollup.
+function getPdpDetail(pdp: { badgeLive: boolean; reviewsLive: boolean; caiLive: boolean }): string {
+  if (pdp.badgeLive && pdp.reviewsLive && pdp.caiLive) return "Badge + Reviews + CAI";
+  if (pdp.badgeLive && pdp.reviewsLive) return "Badge + Reviews";
+  if (pdp.badgeLive) return "Badge only";
+  if (pdp.reviewsLive) return "Reviews only";
+  return "Not live yet";
+}
+
+type ExecSortKey = "brand" | "status" | "ready" | "closeDate" | "lastCall";
+
+// Nulls (nothing scheduled / not yet ready) always sort to the end, regardless
+// of direction — an empty date isn't meaningfully "earliest."
+function compareNullableDates(a: string | null, b: string | null): number {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// Read-only, high-level snapshot for leadership: is each VIP brand ready to
+// go live, are they A/B testing, and when did we last have a call — one row
+// per brand rather than three separate widget boards to cross-reference.
+function ExecOverviewView({
+  brands, scheduledCalls, onRowClick, onToggleAbTesting,
+}: {
+  brands: Brand[];
+  scheduledCalls: Record<string, ScheduledCall>;
+  onRowClick: (brand: Brand) => void;
+  onToggleAbTesting: (brandId: number, newValue: boolean) => void;
+}) {
+  // Defaults to Status descending (Live L3 first, Not Live last) — any
+  // column can still be sorted, same pattern as the Kanban's per-column
+  // sort toggle.
+  const [sortKey, setSortKey] = useState<ExecSortKey>("status");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Clicking a row expands a quick horizontal summary in place rather than
+  // opening the full slide-over panel — "View full details" inside it still
+  // opens that same panel (onRowClick) for deep editing.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  // "all" hides Not Ready by default — nothing's actionable there, so it'd
+  // otherwise clutter a leadership-facing view with brands nobody can do
+  // anything about yet. Picking the Not Ready chip explicitly still surfaces
+  // them, same pattern as the widget-type filter chips elsewhere.
+  const [statusFilter, setStatusFilter] = useState<ExecStatus | "all">("all");
+
+  function toggleSort(key: ExecSortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
+  }
+
+  const statusCounts: Record<ExecStatus, number> = { live_2: 0, live_1: 0, needs_attention: 0, partial: 0, not_live: 0, not_ready: 0 };
+  for (const b of brands) statusCounts[getExecStatus(b)]++;
+
+  const filtered = brands.filter((b) => {
+    const status = getExecStatus(b);
+    return statusFilter === "all" ? status !== "not_ready" : status === statusFilter;
+  });
+
+  const compare = (a: Brand, b: Brand): number => {
+    switch (sortKey) {
+      case "brand": return a.BRAND_NAME.localeCompare(b.BRAND_NAME);
+      case "status": {
+        const statusA = getExecStatus(a);
+        const statusB = getExecStatus(b);
+        const diff = EXEC_STATUS_ORDER[statusA] - EXEC_STATUS_ORDER[statusB];
+        if (diff !== 0) return diff;
+        // Same tier — for Partial specifically, sub-sort so "just needs a
+        // flip" rows rank ahead of "still waiting on the brand" rows.
+        if (statusA === "partial") return getPartialPriority(a) - getPartialPriority(b);
+        // For Needs Attention, sub-sort by how many pieces are currently
+        // down — a brand closer to total collapse (2+ things dark) is more
+        // urgent than one where only a single piece dropped, so it ranks
+        // ahead within the group.
+        if (statusA === "needs_attention") return getRegressedParts(a).length - getRegressedParts(b).length;
+        return 0;
+      }
+      case "ready": return compareNullableDates(getReadyDate(a), getReadyDate(b));
+      case "closeDate": return compareNullableDates(a.CLOSE_DATE, b.CLOSE_DATE);
+      case "lastCall": return compareNullableDates(scheduledCalls[String(a.BRAND_ID)]?.callDate ?? null, scheduledCalls[String(b.BRAND_ID)]?.callDate ?? null);
+    }
+  };
+  const sorted = [...filtered].sort((a, b) => (sortDir === "asc" ? 1 : -1) * compare(a, b));
+
+  function Th({ label, sortKeyValue }: { label: string; sortKeyValue: ExecSortKey }) {
+    const active = sortKey === sortKeyValue;
+    return (
+      <th className="text-left px-4 py-3 cursor-pointer select-none hover:opacity-80" onClick={() => toggleSort(sortKeyValue)}
+        style={{ color: active ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        {label}{active ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+      </th>
+    );
+  }
+
+  return (
+    <div className="flex gap-4 items-start">
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center justify-between mb-3">
+        <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.4)" }}>{sorted.length} brands</div>
+        <button
+          onClick={() => exportExecOverviewCsv(sorted, scheduledCalls)}
+          title="Export the exec overview rows currently shown to CSV"
+          className="text-sm px-3 py-2 rounded-lg flex items-center gap-1.5"
+          style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.12)" }}>
+          <Download size={14} /> Export
+        </button>
+      </div>
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <button
+          onClick={() => setStatusFilter("all")}
+          className="px-3 py-1 rounded-full text-xs font-medium transition-all"
+          style={{
+            background: statusFilter === "all" ? "rgba(114,164,191,0.25)" : "rgba(255,255,255,0.07)",
+            color: statusFilter === "all" ? "#72a4bf" : "rgba(255,255,255,0.5)",
+            border: `1px solid ${statusFilter === "all" ? "rgba(114,164,191,0.5)" : "rgba(255,255,255,0.1)"}`,
+          }}
+        >
+          All <span style={{ opacity: 0.6 }}>{brands.length - statusCounts.not_ready}</span>
+        </button>
+        {EXEC_STATUS_DISPLAY_ORDER.map((key) => {
+          const style = EXEC_STATUS_STYLES[key];
+          const count = statusCounts[key];
+          const isActive = statusFilter === key;
+          if (count === 0) return null;
+          return (
+            <button
+              key={key}
+              onClick={() => setStatusFilter(isActive ? "all" : key)}
+              className="px-3 py-1 rounded-full text-xs font-medium transition-all"
+              style={{
+                background: isActive ? style.color + "25" : "rgba(255,255,255,0.07)",
+                color: key === "not_ready" ? "rgba(255,255,255,0.5)" : style.color,
+                border: `1px solid ${isActive ? style.color + "55" : "rgba(255,255,255,0.1)"}`,
+              }}
+            >
+              {style.label} <span style={{ opacity: 0.6 }}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+    <div className="rounded-xl overflow-hidden" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+      <table className="w-full">
+        <thead style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <tr>
+            <Th label="Brand" sortKeyValue="brand" />
+            <Th label="Status" sortKeyValue="status" />
+            <th className="text-left px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>A/B Testing</th>
+            <Th label="Ready Date" sortKeyValue="ready" />
+            <Th label="Close Date" sortKeyValue="closeDate" />
+            <Th label="Last Call" sortKeyValue="lastCall" />
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((brand, index) => {
+            const execStatusKey = getExecStatus(brand);
+            const execStatus = EXEC_STATUS_STYLES[execStatusKey];
+            const readyDate = getReadyDate(brand);
+            const sc = scheduledCalls[String(brand.BRAND_ID)];
+            const lastCallLabel = !sc
+              ? "None scheduled"
+              : sc.action === "webinar_sheet"
+                ? "On webinar list"
+                : sc.callDate
+                  ? new Date(sc.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                  : "Scheduled";
+
+            const isExpanded = expandedId === brand.BRAND_ID;
+            const regressedParts = execStatusKey === "needs_attention" ? getRegressedParts(brand) : [];
+            const hubspotUrl = brand.HUBSPOT_COMPANY_ID ? `https://app-na2.hubspot.com/contacts/46815331/record/0-2/${brand.HUBSPOT_COMPANY_ID}` : null;
+            const adminUrl = `https://app.thefrontrowhealth.com/admin/health_brands/${brand.BRAND_ID}`;
+
+            // Visible sub-group label within Partial / Needs Attention — only
+            // shown when sorted by Status, since that's the only ordering
+            // where rows sharing a label actually end up adjacent. A labeled
+            // divider (not just a silent reorder) so it's clear *why* the
+            // rows are grouped this way.
+            const groupLabel = sortKey === "status" ? getSubGroupLabel(execStatusKey, brand) : null;
+            const prevBrand = index > 0 ? sorted[index - 1] : null;
+            const prevGroupLabel = prevBrand && sortKey === "status" ? getSubGroupLabel(getExecStatus(prevBrand), prevBrand) : null;
+            const showGroupHeader = groupLabel !== null && groupLabel !== prevGroupLabel;
+
+            return (
+              <Fragment key={brand.BRAND_ID}>
+              {showGroupHeader && (
+                <tr>
+                  <td colSpan={6} className="px-4 pt-4 pb-1" style={{ fontSize: "0.7rem", fontWeight: 600, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    {groupLabel}
+                  </td>
+                </tr>
+              )}
+              <tr style={{ borderBottom: isExpanded ? "none" : "1px solid rgba(255,255,255,0.04)", cursor: "pointer", background: isExpanded ? "rgba(255,255,255,0.03)" : "" }}
+                onClick={() => setExpandedId((prev) => (prev === brand.BRAND_ID ? null : brand.BRAND_ID))}
+                onMouseEnter={(e) => { if (!isExpanded) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+                onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.background = ""; }}>
+                <td className="px-4 py-3" style={{ color: "#fff", fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "0.9rem", fontWeight: 600 }}>
+                  {brand.BRAND_NAME}
+                </td>
+                <td className="px-4 py-3">
+                  {execStatusKey === "not_ready" ? (
+                    <span style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.8rem" }}>—</span>
+                  ) : (
+                    <>
+                      <span className="px-2 py-0.5 rounded-full" style={{ background: execStatus.color + "22", color: execStatus.color, fontSize: "0.8rem", fontWeight: 600 }}>
+                        {execStatus.label}
+                      </span>
+                      <span style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", marginLeft: "6px" }}>— {getExecStatusDetail(brand)}</span>
+                    </>
+                  )}
+                </td>
+                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-2">
+                    <AbTestingToggle value={brand.AB_TESTING} onToggle={(v) => onToggleAbTesting(brand.BRAND_ID, v)} />
+                    {brand.AB_TESTING && brand.AB_TESTING_NOTES && (
+                      <span title={brand.AB_TESTING_NOTES} style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.75rem" }}>
+                        {brand.AB_TESTING_NOTES.slice(0, 30)}{brand.AB_TESTING_NOTES.length > 30 ? "…" : ""}
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3" style={{ color: readyDate ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.25)", fontSize: "0.85rem" }}>
+                  {readyDate ? new Date(readyDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Not yet"}
+                </td>
+                <td className="px-4 py-3" style={{ color: brand.CLOSE_DATE ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.25)", fontSize: "0.85rem" }}>
+                  {brand.CLOSE_DATE ? new Date(brand.CLOSE_DATE).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                </td>
+                <td className="px-4 py-3" style={{ color: sc ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.25)", fontSize: "0.85rem" }}>
+                  {lastCallLabel}
+                </td>
+              </tr>
+              {isExpanded && (
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(255,255,255,0.03)" }}>
+                  <td colSpan={6} className="px-4 py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-2">
+                      <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+                        {regressedParts.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: "0.7rem", color: "#e05c5c", textTransform: "uppercase" }}>Previously Live</div>
+                            <div style={{ fontSize: "0.85rem", color: "#fff" }}>
+                              {regressedParts.map((p, i) => (
+                                <span key={p.name}>
+                                  {i > 0 && ", "}
+                                  {p.name} <span style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem" }}>
+                                    (last live {p.lastLiveDate ? new Date(p.lastLiveDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "unknown"})
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase" }}>Segment</div>
+                          <div style={{ fontSize: "0.85rem", color: "#fff" }}>{brand.KIND ?? "—"}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase" }}>Ready Date</div>
+                          <div style={{ fontSize: "0.85rem", color: readyDate ? "#fff" : "rgba(255,255,255,0.3)" }}>
+                            {readyDate ? new Date(readyDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Not yet"}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase" }}>PDP</div>
+                          {brand.TOP_PDP ? (
+                            <div style={{ fontSize: "0.85rem" }}>
+                              <a href={brand.TOP_PDP.url} target="_blank" rel="noopener noreferrer"
+                                style={{ color: "#72a4bf" }} onClick={(e) => e.stopPropagation()}>
+                                {brand.TOP_PDP.name}
+                              </a>
+                              <span style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem" }}>
+                                {" "}— {getPdpDetail(brand.TOP_PDP)}{brand.PDP_COUNT > 1 ? ` (1 of ${brand.PDP_COUNT})` : ""}
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.3)" }}>No published PDP</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {hubspotUrl && <a href={hubspotUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#f97316", fontSize: "0.8rem" }} onClick={(e) => e.stopPropagation()}>HubSpot</a>}
+                        <a href={adminUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#72a4bf", fontSize: "0.8rem" }} onClick={(e) => e.stopPropagation()}>Admin</a>
+                        <button onClick={(e) => { e.stopPropagation(); onRowClick(brand); }}
+                          className="px-3 py-1.5 rounded-lg"
+                          style={{ background: "rgba(114,164,191,0.15)", color: "#72a4bf", fontSize: "0.8rem", fontWeight: 600 }}>
+                          View full details →
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+    </div>
+    <ExecStatusGuide />
+    </div>
+  );
+}
+
+// Short, static reference for what each Exec Overview status pill means —
+// pulled out as its own component so the definitions live next to the view
+// itself instead of only in code comments.
+const EXEC_STATUS_GUIDE: { key: ExecStatus; description: string }[] = [
+  { key: "live_2", description: "Badge, Reviews, and CAI/CAS are all live." },
+  { key: "live_1", description: "Badge + Reviews live — CAI/CAS was never expected for this brand." },
+  { key: "needs_attention", description: "Badge, Reviews, or CAI/CAS is previously live — it worked before and has since broken. Check the dropdown for what dropped and when." },
+  { key: "partial", description: "Everything is ready, just not fully live yet — either Badge or Reviews is live and the other isn't, or Badge + Reviews are live but CAI/CAS hasn't caught up. If a piece doesn't even have a ready date yet (usually Reviews or CAI/CAS), that's called out separately." },
+  { key: "not_live", description: "None of the badges have ever gone live — though Badge + Reviews are both fully ready and just waiting to be flipped on." },
+  { key: "not_ready", description: "Badge or Reviews isn't ready yet — nothing for an SE to act on." },
+];
+
+function ExecStatusGuide() {
+  return (
+    <div className="rounded-xl p-4 flex-shrink-0" style={{ width: "230px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+      <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px" }}>
+        Status guide
+      </div>
+      <div className="flex flex-col gap-3">
+        {EXEC_STATUS_GUIDE.map(({ key, description }) => {
+          const style = EXEC_STATUS_STYLES[key];
+          return (
+            <div key={key}>
+              {key === "not_ready" ? (
+                <span style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.8rem" }}>— {style.label}</span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full" style={{ background: style.color + "22", color: style.color, fontSize: "0.8rem", fontWeight: 600 }}>
+                  {style.label}
+                </span>
+              )}
+              <div style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.75rem", marginTop: "4px", lineHeight: 1.4 }}>
+                {description}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
