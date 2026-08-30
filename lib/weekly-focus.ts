@@ -13,7 +13,7 @@
 // 90-day window found 21 genuinely open. Re-add a ticket-volume signal only
 // once it's computed directly from /issues (filtering on resolution_time),
 // not from this field.
-import { Brand, isBrandStuck } from "./metabase";
+import { Brand, PipelineStatus, isBrandStuck } from "./metabase";
 
 export interface WeeklyFocusReason {
   key: string;
@@ -79,12 +79,18 @@ export function isoWeek(date: Date): string {
   return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
-// A brand is visible on the board this week if it's pinned (always wins) or
-// it's a real candidate and hasn't been dismissed for the current week.
-// Churned brands are excluded outright, pin included — their sentiment/ticket
-// signals predate the churn and don't reflect a brand an SE can still act on.
+// This Week is for brands an SE still has implementation/onboarding work to
+// do on — not steady-state account health for brands that have already
+// succeeded. Live and churned are both excluded outright, pin included:
+// a live brand's sentiment/collab-request signals don't change that its
+// pipeline work is done, and a churned brand's signals predate the churn.
+const EXCLUDED_STATUSES: PipelineStatus[] = ["live", "churned"];
+
+// A brand is visible on the board this week if it's pinned (always wins,
+// except for the statuses above) or it's a real candidate and hasn't been
+// dismissed for the current week.
 export function isWeeklyFocusVisible(brand: Brand, currentWeek: string): boolean {
-  if (brand.PIPELINE_STATUS === "churned") return false;
+  if (EXCLUDED_STATUSES.includes(brand.PIPELINE_STATUS)) return false;
   if (brand.WEEKLY_FOCUS_PINNED) return true;
   if (brand.WEEKLY_FOCUS_DISMISSED_WEEK === currentWeek) return false;
   return isWeeklyFocusCandidate(brand);
