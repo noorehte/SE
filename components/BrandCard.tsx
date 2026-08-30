@@ -55,7 +55,7 @@ export function recurlyStateStyle(value: string): { label: string; color: string
 }
 
 const OWNER_INITIALS: Record<string, string> = {
-  maha: "MH", noor: "NR", naumaan: "NM",
+  maha: "MH", noor: "NR", naumaan: "NM", john: "JH",
   mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK",
 };
 

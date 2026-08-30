@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Brand } from "@/lib/metabase";
 import { SeSprintEntry } from "@/lib/se-sprint-sheet";
 import { weeklyFocusScore, weeklyFocusReasons, isWeeklyFocusVisible, isoWeek, WeeklyFocusReason } from "@/lib/weekly-focus";
-import { ALL_COLUMNS } from "./Dashboard";
+import { ALL_COLUMNS, SE_OWNERS } from "./Dashboard";
 import Sidebar from "./Sidebar";
 import { EditableText } from "./BrandDetailPanel";
 import { Rocket, X, ExternalLink, Trash2, Pin, PinOff } from "lucide-react";
@@ -194,7 +194,11 @@ export default function SeSprintPage({ initialBrands, entriesByBrandId }: { init
     [brands, currentWeek]
   );
 
-  const seOptions = Array.from(new Set(visible.map((b) => b.SE_OWNER).filter((se): se is string => !!se))).sort();
+  // Scoped to the real SE roster (not every distinct SE_OWNER value in the
+  // data) — a brand can carry a HubSpot owner's raw full name as a fallback
+  // (see normalizeOwnerName in lib/metabase.ts) when it has no assigned SE
+  // shortname, and those aren't SEs we want a weekly lane for.
+  const seOptions = SE_OWNERS;
 
   // Highest-scoring brands first within each SE's lane, capped at LANE_SIZE —
   // a pin always keeps a brand visible regardless of rank, so pinned brands
