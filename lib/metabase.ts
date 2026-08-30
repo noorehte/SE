@@ -150,6 +150,7 @@ export interface Brand {
   CAI_IMPLEMENTATION_READY: "CAI" | "CAS" | null;
   PYLON_SENTIMENT: string | null; // Pylon account's "Sentiment" custom field, matched by HUBSPOT_COMPANY_ID — null if no Pylon account or no sentiment set
   PYLON_LAST_COMMUNICATION_AT: string | null; // Pylon account's latest_customer_activity_time — null if no Pylon account or no activity on file
+  PYLON_OPEN_ISSUES_90D: number | null; // Pylon account's "number_of_open_issues_last_90_days" custom field — null if no Pylon account or field unset
   RECURLY_STATE: string | null; // Recurly subscription state ("active" | "future" | "expired" | "failed" | "paused" | ...) for the brand's most recent subscription — null if no Recurly account/subscription found
   RECURLY_PLAN_NAME: string | null;
   RECURLY_AMOUNT: number | null;
@@ -180,6 +181,9 @@ export interface Brand {
   // Automated snippet follow-ups (SE-tracker controls, stored as field overrides):
   FOLLOWUP_SNOOZE_UNTIL: string | null; // ISO date — send one agnostic follow-up on this date, then stop
   FOLLOWUPS_DISABLED: boolean;           // hard-off switch for this brand
+  // "This Week" board controls (stored as field overrides):
+  WEEKLY_FOCUS_PINNED: boolean;             // always show on the board this week, regardless of score
+  WEEKLY_FOCUS_DISMISSED_WEEK: string | null; // ISO week (e.g. "2026-W35") the brand was dismissed for — stale once the week has passed
 }
 
 // "Stuck" means sitting too long in a status that still needs SE action.
@@ -640,6 +644,7 @@ export async function getBrands(): Promise<Brand[]> {
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
       PYLON_SENTIMENT: null as string | null,
       PYLON_LAST_COMMUNICATION_AT: null as string | null,
+      PYLON_OPEN_ISSUES_90D: null as number | null,
       RECURLY_STATE: null as string | null,
       RECURLY_PLAN_NAME: null as string | null,
       RECURLY_AMOUNT: null as number | null,
@@ -674,6 +679,8 @@ export async function getBrands(): Promise<Brand[]> {
       CAI_IMPLEMENTED: implementedByBrand.get(brandId)?.cai ?? false,
       FOLLOWUP_SNOOZE_UNTIL: f.FOLLOWUP_SNOOZE_UNTIL || null,
       FOLLOWUPS_DISABLED: f.FOLLOWUPS_DISABLED === "true",
+      WEEKLY_FOCUS_PINNED: f.WEEKLY_FOCUS_PINNED === "true",
+      WEEKLY_FOCUS_DISMISSED_WEEK: f.WEEKLY_FOCUS_DISMISSED_WEEK || null,
     };
 
     // Churned = app-side discarded_at only (soft-deleted on health_brands).

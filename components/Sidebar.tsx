@@ -7,7 +7,7 @@ import { LayoutGrid, Users, AlertCircle, BarChart2, Send, Rocket, CreditCard } f
 const NAV = [
   { label: "Pipeline",    href: "/",        icon: <LayoutGrid size={15} />, key: "pipeline" },
   { label: "Table view",  href: "/brands",  icon: <Users size={15} />,      key: "brands" },
-  { label: "SE Sprint",   href: "/se-sprint", icon: <Rocket size={15} />,   key: "se-sprint" },
+  { label: "This Week",   href: "/se-sprint", icon: <Rocket size={15} />,   key: "se-sprint" },
   { label: "Billing",     href: "/billing", icon: <CreditCard size={15} />, key: "billing" },
   { label: "Follow-ups",  href: "/followups", icon: <Send size={15} />,     key: "followups" },
   { label: "Alerts",      href: "/alerts",  icon: <AlertCircle size={15} />, key: "alerts" },
