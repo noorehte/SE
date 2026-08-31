@@ -6,7 +6,6 @@ import { SeSprintEntry } from "@/lib/se-sprint-sheet";
 import { weeklyFocusReasons, isoWeek, resolveWeeklyLane, WeeklyFocusReason } from "@/lib/weekly-focus";
 import { WeeklySnapshot } from "@/lib/weekly-snapshot";
 import { ALL_COLUMNS, SE_OWNERS } from "./Dashboard";
-import { BLOCKING_ITEMS } from "./BrandCard";
 import Sidebar from "./Sidebar";
 import { EditableText } from "./BrandDetailPanel";
 import { Rocket, X, ExternalLink, Trash2, Pin, PinOff, Check, RotateCcw } from "lucide-react";
@@ -72,25 +71,66 @@ interface NextStep {
   href?: string;
 }
 
-// One concrete next step per reason a brand is on the board — what an SE
-// should actually go do, not just a restatement of the badge. Falls back to
-// the pipeline's own blocking-item text (BrandCard.BLOCKING_ITEMS) when a
-// reason doesn't have a more specific action of its own. Shared by the card's
-// one-line blurb and the detail panel's full list, so they never drift.
+function daysAgo(iso: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+}
+
+// One concrete, per-brand next step for each reason a brand is on the
+// board — answers "what is THIS brand specifically waiting on," not a
+// category label shared by every brand in the same pipeline status. Two
+// brands both "code_snippets_available" read differently here depending on
+// whether the collaborator code is actually in hand (waiting on the SE to
+// build) or still missing (waiting on the brand to share it) — that's the
+// real fork an SE needs to see, not just "Awaiting implementation" on both.
+// Shared by the card's one-line blurb and the detail panel's full list, so
+// they never drift.
 function getNextSteps(brand: Brand): NextStep[] {
   const steps: NextStep[] = [];
   const pylonUrl = pylonAccountUrl(brand);
   const isFrustrated = brand.PYLON_SENTIMENT === "high_risk_detractor" || brand.PYLON_SENTIMENT === "frustrated";
+  const code = collaboratorCode(brand);
 
   if (isFrustrated) {
-    steps.push({ label: "Review recent Pylon activity and check in", href: pylonUrl ?? undefined });
+    const label = brand.PYLON_LAST_COMMUNICATION_AT
+      ? `No contact in ${daysAgo(brand.PYLON_LAST_COMMUNICATION_AT)}d — check in`
+      : "No Pylon activity on file — reach out";
+    steps.push({ label, href: pylonUrl ?? undefined });
   }
   if (brand.ON_SE_SPRINT_SHEET) {
-    steps.push({ label: "Review the implementation request below" });
+    const label = code
+      ? `Collab code on file (${code}) — start building`
+      : brand.SE_SPRINT_HAS_SHARED_CODE && brand.SE_SPRINT_HAS_SHARED_CODE !== "No"
+        ? "Brand says code shared — verify and confirm"
+        : "Get collaborator code from brand";
+    steps.push({ label });
   }
-  const blocking = BLOCKING_ITEMS[brand.PIPELINE_STATUS];
-  if (blocking) {
-    steps.push({ label: blocking });
+
+  switch (brand.PIPELINE_STATUS) {
+    case "not_started":
+      steps.push({ label: "No products submitted yet — brand needs to add products" });
+      break;
+    case "pending_review":
+      steps.push({ label: `${brand.PRODUCTS_COUNT} product(s) awaiting board review` });
+      break;
+    case "products_approved_needs_call":
+      steps.push({ label: `${brand.PRODUCTS_APPROVED_COUNT} product(s) approved — book onboarding call` });
+      break;
+    case "code_snippets_available":
+      // Only add if the collab-request branch above didn't already cover the
+      // same code-status question for this brand.
+      if (!brand.ON_SE_SPRINT_SHEET) {
+        steps.push({
+          label: code
+            ? `Code on file (${code}) — build the theme`
+            : "Waiting on brand for collaborator code",
+        });
+      }
+      break;
+    case "was_live":
+      steps.push({ label: `Went inactive ${brand.DAYS_IN_STATUS}d ago — find out why and re-activate` });
+      break;
+    default:
+      break;
   }
   return steps;
 }
