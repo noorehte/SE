@@ -3,9 +3,10 @@
 import { useState, useRef, Fragment } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
 import { BadgeStatus, ExecStatus, getBadgeStatus, getExecStatus, getExecStatusDetail, getRegressedParts, getReadyDate, EXEC_STATUS_ORDER, EXEC_STATUS_STYLES, EXEC_STATUS_DISPLAY_ORDER } from "@/lib/liveStatus";
-import BrandCard, { SEGMENT_STYLES, AbTestingToggle, SENTIMENT_STYLES } from "./BrandCard";
+import BrandCard, { SEGMENT_STYLES, AbTestingToggle, SENTIMENT_STYLES, NO_SEGMENT } from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
 import ExecOverview from "./ExecOverview";
+import MultiSelectDropdown from "./MultiSelectDropdown";
 import { Download, LayoutGrid, List, RefreshCw, Search, Columns3, ArrowDownWideNarrow, ArrowUpNarrowWide, Briefcase, Gauge } from "lucide-react";
 import Sidebar from "./Sidebar";
 import GoogleConnectStatus from "./GoogleConnectStatus";
@@ -182,8 +183,9 @@ export default function Dashboard({
   const [scheduledCalls] = useState(initialScheduledCalls);
   const [view, setView] = useState<"kanban" | "table" | "widgets" | "exec" | "leadership">(hideKanbanTable ? "leadership" : "kanban");
   const [seFilter, setSeFilter] = useState<string>("all");
-  const [segmentFilter, setSegmentFilter] = useState<string>("all");
-  const [sentimentFilter, setSentimentFilter] = useState<string>("all");
+  // Empty array means "all" — same convention for both multi-selects below.
+  const [segmentFilter, setSegmentFilter] = useState<string[]>([]);
+  const [sentimentFilter, setSentimentFilter] = useState<string[]>([]);
   const [columnFilter, setColumnFilter] = useState<KanbanColumnId | null>(null);
   const [statFilter, setStatFilter] = useState<"all" | "in_progress" | "stuck" | "live" | "needs_outreach">("all");
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
@@ -214,13 +216,13 @@ export default function Dashboard({
 
   const seFiltered = seFilter === "all" ? searched : searched.filter((b) => b.SE_OWNER === seFilter);
 
-  const segmentMatched = segmentFilter === "all"
+  const segmentMatched = segmentFilter.length === 0
     ? seFiltered
-    : seFiltered.filter((b) => b.KIND?.toLowerCase() === segmentFilter);
+    : seFiltered.filter((b) => segmentFilter.includes(b.KIND?.toLowerCase() || NO_SEGMENT));
 
-  const sentimentMatched = sentimentFilter === "all"
+  const sentimentMatched = sentimentFilter.length === 0
     ? segmentMatched
-    : segmentMatched.filter((b) => b.PYLON_SENTIMENT === sentimentFilter);
+    : segmentMatched.filter((b) => sentimentFilter.includes(b.PYLON_SENTIMENT ?? ""));
   // Stat cards/table stay churn-free; the Kanban board's Churned column
   // (kanbanBrands below) uses sentimentMatched directly, before this split.
   const segmentFiltered = sentimentMatched.filter((b) => b.PIPELINE_STATUS !== "churned");
@@ -463,31 +465,25 @@ export default function Dashboard({
                 style={{ color: dateTo ? "#fff" : "rgba(255,255,255,0.4)", fontSize: "0.8rem", colorScheme: "dark" }}
               />
             </div>
-            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search || dateFrom || dateTo || segmentFilter !== "all" || sentimentFilter !== "all") && (
-              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); setDateFrom(""); setDateTo(""); setSegmentFilter("all"); setSentimentFilter("all"); }}
+            {(columnFilter || statFilter !== "all" || widgetTypeFilter || search || dateFrom || dateTo || segmentFilter.length > 0 || sentimentFilter.length > 0) && (
+              <button onClick={() => { setColumnFilter(null); setStatFilter("all"); setWidgetTypeFilter(null); setSearch(""); setDateFrom(""); setDateTo(""); setSegmentFilter([]); setSentimentFilter([]); }}
                 className="text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 style={{ background: "rgba(114,164,191,0.12)", color: "#72a4bf", border: "1px solid rgba(114,164,191,0.3)" }}>
                 ✕ Clear filter
               </button>
             )}
-            <select
-              value={segmentFilter}
-              onChange={(e) => setSegmentFilter(e.target.value)}
-              className="text-sm rounded-lg px-3 py-2"
-              style={{ background: "rgba(255,255,255,0.07)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)", fontSize: "0.875rem" }}
-            >
-              <option value="all">All Segments</option>
-              {SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_STYLES[s].label}</option>)}
-            </select>
-            <select
-              value={sentimentFilter}
-              onChange={(e) => setSentimentFilter(e.target.value)}
-              className="text-sm rounded-lg px-3 py-2"
-              style={{ background: "rgba(255,255,255,0.07)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)", fontSize: "0.875rem" }}
-            >
-              <option value="all">All Sentiment</option>
-              {SENTIMENTS.map((s) => <option key={s} value={s}>{SENTIMENT_STYLES[s].label}</option>)}
-            </select>
+            <MultiSelectDropdown
+              label="Segments"
+              options={[...SEGMENTS.map((s) => ({ value: s, label: SEGMENT_STYLES[s].label })), { value: NO_SEGMENT, label: "No Segment" }]}
+              selected={segmentFilter}
+              onChange={setSegmentFilter}
+            />
+            <MultiSelectDropdown
+              label="Sentiment"
+              options={SENTIMENTS.map((s) => ({ value: s, label: SENTIMENT_STYLES[s].label }))}
+              selected={sentimentFilter}
+              onChange={setSentimentFilter}
+            />
             <select
               value={seFilter}
               onChange={(e) => setSeFilter(e.target.value)}
@@ -524,7 +520,7 @@ export default function Dashboard({
               {showExecOverview && (
                 <button onClick={() => setView("exec")} className="px-3 py-2 flex items-center gap-1.5 text-sm transition-colors"
                   style={{ background: view === "exec" ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)", color: view === "exec" ? "#fff" : "rgba(255,255,255,0.4)" }}>
-                  <Briefcase size={14} /> {hideKanbanTable ? "SE Overview" : "Exec Overview"}
+                  <Briefcase size={14} /> SE Overview
                 </button>
               )}
             </div>
@@ -625,7 +621,7 @@ export default function Dashboard({
           ) : view === "widgets" ? (
             <WidgetStatusView brands={segmentFiltered} onCardClick={setSelectedBrand} />
           ) : view === "leadership" ? (
-            <ExecOverview brands={segmentFiltered} onSelectBrand={setSelectedBrand} />
+            <ExecOverview brands={segmentFiltered} onSelectBrand={setSelectedBrand} perMonthLabel="VIP Brands per Month" />
           ) : (
             <ExecOverviewView brands={segmentFiltered} scheduledCalls={scheduledCalls} onRowClick={setSelectedBrand} onToggleAbTesting={toggleAbTesting} />
           )}

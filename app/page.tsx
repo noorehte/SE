@@ -58,7 +58,7 @@ export default async function Home() {
       };
     });
 
-    return <Dashboard initialBrands={enrichedBrands} initialScheduledCalls={scheduledCalls} />;
+    return <Dashboard initialBrands={enrichedBrands} initialScheduledCalls={scheduledCalls} showExecOverview />;
   } catch (e) {
     console.error("Home page error:", e);
     const envCheck = {
