@@ -42,6 +42,7 @@ export default function MultiSelectDropdown({
   return (
     <div ref={ref} className="relative">
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
         className="text-sm rounded-lg px-3 py-2 flex items-center gap-1.5"
         style={{
@@ -75,6 +76,7 @@ export default function MultiSelectDropdown({
           })}
           {selected.length > 0 && (
             <button
+              type="button"
               onClick={() => onChange([])}
               className="text-left px-3 py-1.5 text-sm"
               style={{ color: "#72a4bf", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "4px" }}
