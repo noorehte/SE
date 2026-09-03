@@ -1,6 +1,9 @@
+import { cached, invalidateCache } from "@/lib/server-cache";
+
 const NOTION_TOKEN = process.env.NOTION_TOKEN!;
 const DB_ID = "7256f79f390a43f38e2ba2b878010854";
 const BASE = "https://api.notion.com/v1";
+const SCHEDULED_CALLS_CACHE_KEY = "scheduled-calls";
 
 export interface ScheduledCall {
   brandId: number;
@@ -58,46 +61,53 @@ export async function markScheduled(
       "Action": { select: { name: action } },
     },
   });
+  await invalidateCache(SCHEDULED_CALLS_CACHE_KEY).catch(() => {});
 }
 
+// This paginates the entire scheduled-calls database on every call — cached
+// briefly (see lib/server-cache.ts) since it was hit fresh on every page
+// load. markScheduled() above invalidates this on a successful write so a
+// newly-scheduled call shows up immediately rather than waiting out the TTL.
 export async function getAllScheduled(): Promise<Record<string, ScheduledCall>> {
-  const results: Record<string, ScheduledCall> = {};
-  let cursor: string | undefined;
+  return cached(SCHEDULED_CALLS_CACHE_KEY, 60, async () => {
+    const results: Record<string, ScheduledCall> = {};
+    let cursor: string | undefined;
 
-  do {
-    const data: {
-      results: Array<{
-        properties: {
-          "Brand ID": { number: number | null };
-          "Brand Name": { title: Array<{ plain_text: string }> };
-          "SE Owner": { rich_text: Array<{ plain_text: string }> };
-          "Scheduled At": { date: { start: string } | null };
-          "Call Date": { date: { start: string } | null };
-          "Action": { select: { name: string } | null };
+    do {
+      const data: {
+        results: Array<{
+          properties: {
+            "Brand ID": { number: number | null };
+            "Brand Name": { title: Array<{ plain_text: string }> };
+            "SE Owner": { rich_text: Array<{ plain_text: string }> };
+            "Scheduled At": { date: { start: string } | null };
+            "Call Date": { date: { start: string } | null };
+            "Action": { select: { name: string } | null };
+          };
+        }>;
+        has_more: boolean;
+        next_cursor: string | null;
+      } = await notionRequest(`/databases/${DB_ID}/query`, "POST", {
+        page_size: 100,
+        ...(cursor ? { start_cursor: cursor } : {}),
+      });
+
+      for (const page of data.results ?? []) {
+        const brandId = page.properties["Brand ID"]?.number;
+        if (!brandId) continue;
+        results[String(brandId)] = {
+          brandId,
+          brandName: page.properties["Brand Name"]?.title?.[0]?.plain_text ?? "",
+          seOwner: page.properties["SE Owner"]?.rich_text?.[0]?.plain_text ?? "",
+          scheduledAt: page.properties["Scheduled At"]?.date?.start ?? "",
+          callDate: page.properties["Call Date"]?.date?.start ?? "",
+          action: (page.properties["Action"]?.select?.name ?? "call") as "call" | "webinar_sheet",
         };
-      }>;
-      has_more: boolean;
-      next_cursor: string | null;
-    } = await notionRequest(`/databases/${DB_ID}/query`, "POST", {
-      page_size: 100,
-      ...(cursor ? { start_cursor: cursor } : {}),
-    });
+      }
 
-    for (const page of data.results ?? []) {
-      const brandId = page.properties["Brand ID"]?.number;
-      if (!brandId) continue;
-      results[String(brandId)] = {
-        brandId,
-        brandName: page.properties["Brand Name"]?.title?.[0]?.plain_text ?? "",
-        seOwner: page.properties["SE Owner"]?.rich_text?.[0]?.plain_text ?? "",
-        scheduledAt: page.properties["Scheduled At"]?.date?.start ?? "",
-        callDate: page.properties["Call Date"]?.date?.start ?? "",
-        action: (page.properties["Action"]?.select?.name ?? "call") as "call" | "webinar_sheet",
-      };
-    }
+      cursor = data.has_more ? (data.next_cursor ?? undefined) : undefined;
+    } while (cursor);
 
-    cursor = data.has_more ? (data.next_cursor ?? undefined) : undefined;
-  } while (cursor);
-
-  return results;
+    return results;
+  });
 }

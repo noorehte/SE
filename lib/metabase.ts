@@ -157,6 +157,13 @@ export interface Brand {
   PDP_COUNT: number; // published, non-discarded products with a page URL
   PYLON_SENTIMENT: string | null; // Pylon account's "Sentiment" custom field, matched by HUBSPOT_COMPANY_ID — null if no Pylon account or no sentiment set
   PYLON_LAST_COMMUNICATION_AT: string | null; // Pylon account's latest_customer_activity_time — null if no Pylon account or no activity on file
+  // Pylon account's "number_of_open_issues_last_90_days" custom field — null if no Pylon account or field unset.
+  // NOT reliable as "currently open ticket count" despite the name: spot-checked
+  // against the real API, one account showed 1 here while directly counting
+  // issues with no resolution_time in the same window found 21. Not used for
+  // scoring/display in lib/weekly-focus.ts as a result — see that file's header.
+  PYLON_OPEN_ISSUES_90D: number | null;
+  PYLON_ACCOUNT_ID: string | null; // Pylon's own account id — null if no Pylon account found
   RECURLY_STATE: string | null; // Recurly subscription state ("active" | "future" | "expired" | "failed" | "paused" | ...) for the brand's most recent subscription — null if no Recurly account/subscription found
   RECURLY_PLAN_NAME: string | null;
   RECURLY_AMOUNT: number | null;
@@ -187,6 +194,10 @@ export interface Brand {
   // Automated snippet follow-ups (SE-tracker controls, stored as field overrides):
   FOLLOWUP_SNOOZE_UNTIL: string | null; // ISO date — send one agnostic follow-up on this date, then stop
   FOLLOWUPS_DISABLED: boolean;           // hard-off switch for this brand
+  // "This Week" board controls (stored as field overrides):
+  WEEKLY_FOCUS_PINNED: boolean;             // always show on the board this week, regardless of score
+  WEEKLY_FOCUS_DISMISSED_WEEK: string | null; // ISO week (e.g. "2026-W35") the brand was dismissed for — stale once the week has passed
+  WEEKLY_FOCUS_DONE_WEEK: string | null;    // ISO week the brand was marked handled — still shown (collapsed), unlike dismissed
   // VIP-board-only Kanban column (SE-tracker control, stored as a field override) —
   // moves a brand out of its real PIPELINE_STATUS column into "A/B Testing" without
   // losing that real status, so it lands back in the right column once removed.
@@ -241,7 +252,14 @@ function computePipelineStatus(
   return "products_approved_needs_call";
 }
 
-export async function getBrands(): Promise<Brand[]> {
+// The actual data-fetching — no caching here. Deliberately kept free of any
+// fs/Vercel-KV import: this file (lib/metabase.ts) is imported by client
+// components for its types (Brand, PipelineStatus, etc.), and bundling a
+// Node-only module like fs/promises into it breaks the client build. The
+// cached, server-only entry point is getBrands() in lib/get-brands.ts, which
+// wraps this function — server code should import getBrands from there, not
+// call this directly.
+export async function fetchBrandsFromSources(): Promise<Brand[]> {
   const BRAND_FIELDS = [
     3382, // BRAND_ID
     3383, // BRAND_NAME
@@ -423,8 +441,13 @@ export async function getBrands(): Promise<Brand[]> {
   const pipelineCompanyIds = stgBrandRows
     .map((r: Record<string, unknown>) => r.HUBSPOT_COMPANY_ID as number | null)
     .filter((id: number | null): id is number => id != null);
-  const hubspotOwnerChecksByCompanyId = await getHubSpotOwnerChecksByCompanyId(pipelineCompanyIds);
-  const closeDatesByCompanyId = await getCloseDatesByCompanyId(pipelineCompanyIds);
+  // Independent of each other and of getAllOverrides() below (Notion) — run
+  // together rather than paying three sequential round-trips.
+  const [hubspotOwnerChecksByCompanyId, closeDatesByCompanyId, overrides] = await Promise.all([
+    getHubSpotOwnerChecksByCompanyId(pipelineCompanyIds),
+    getCloseDatesByCompanyId(pipelineCompanyIds),
+    getAllOverrides(),
+  ]);
 
   // Table 203 (stg-brands) is the comprehensive brand list — every brand flows in
   // here, including ones that never went through the onboarding portal. Table 447
@@ -669,7 +692,6 @@ export async function getBrands(): Promise<Brand[]> {
   }
 
   const now = Date.now();
-  const overrides = await getAllOverrides();
 
   function hubspotOwnerCheck(hubspotCompanyId: number | null) {
     return hubspotCompanyId != null ? hubspotOwnerChecksByCompanyId.get(hubspotCompanyId) : undefined;
@@ -739,6 +761,8 @@ export async function getBrands(): Promise<Brand[]> {
       CAI_IMPLEMENTATION_READY: null as "CAI" | "CAS" | null,
       PYLON_SENTIMENT: null as string | null,
       PYLON_LAST_COMMUNICATION_AT: null as string | null,
+      PYLON_OPEN_ISSUES_90D: null as number | null,
+      PYLON_ACCOUNT_ID: null as string | null,
       RECURLY_STATE: null as string | null,
       RECURLY_PLAN_NAME: null as string | null,
       RECURLY_AMOUNT: null as number | null,
@@ -775,6 +799,9 @@ export async function getBrands(): Promise<Brand[]> {
       CAI_IMPLEMENTED: implementedByBrand.get(brandId)?.cai ?? false,
       FOLLOWUP_SNOOZE_UNTIL: f.FOLLOWUP_SNOOZE_UNTIL || null,
       FOLLOWUPS_DISABLED: f.FOLLOWUPS_DISABLED === "true",
+      WEEKLY_FOCUS_PINNED: f.WEEKLY_FOCUS_PINNED === "true",
+      WEEKLY_FOCUS_DISMISSED_WEEK: f.WEEKLY_FOCUS_DISMISSED_WEEK || null,
+      WEEKLY_FOCUS_DONE_WEEK: f.WEEKLY_FOCUS_DONE_WEEK || null,
     };
 
     // Churned = app-side discarded_at only (soft-deleted on health_brands).

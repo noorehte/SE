@@ -40,6 +40,7 @@ function headers() {
 }
 
 interface PylonAccount {
+  id?: string;
   custom_fields?: Record<string, { value?: string }>;
   crm_settings?: { details?: { source?: string; id?: string }[] };
   latest_customer_activity_time?: string;
@@ -51,8 +52,10 @@ interface PylonAccountsPage {
 }
 
 export interface PylonAccountData {
+  accountId: string | null; // Pylon's own account id — for deep-linking to https://app.usepylon.com/accounts/{id}
   sentiment: string | null;
   lastActivityAt: string | null; // ISO timestamp, or null if Pylon has none on file
+  openIssues90d: number | null; // Pylon's own "number_of_open_issues_last_90_days" custom field — null if unset
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -80,10 +83,17 @@ async function fetchAllFromPylon(): Promise<Record<string, PylonAccountData>> {
 
       const sentiment = account.custom_fields?.sentiment?.value ?? null;
       const lastActivityAt = account.latest_customer_activity_time || null;
+      const openIssuesRaw = account.custom_fields?.number_of_open_issues_last_90_days?.value;
+      const openIssues90d = openIssuesRaw != null && openIssuesRaw !== "" ? Number(openIssuesRaw) : null;
 
       const existing = result[hubspotId];
       if (!existing || (lastActivityAt && (!existing.lastActivityAt || lastActivityAt > existing.lastActivityAt))) {
-        result[hubspotId] = { sentiment, lastActivityAt };
+        result[hubspotId] = {
+          accountId: account.id ?? null,
+          sentiment,
+          lastActivityAt,
+          openIssues90d: Number.isFinite(openIssues90d) ? openIssues90d : null,
+        };
       }
     }
     if (!data.pagination?.has_next_page) break;

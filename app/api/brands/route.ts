@@ -1,4 +1,4 @@
-import { getBrands } from "@/lib/metabase";
+import { getBrands } from "@/lib/get-brands";
 import { getCaiReadyBrands, buildCaiLookup } from "@/lib/cai-sheet";
 import { getReachouts, buildReachoutLookup } from "@/lib/reachouts-sheet";
 import { getSeSprintEntries, buildSeSprintLookup } from "@/lib/se-sprint-sheet";
@@ -32,6 +32,8 @@ export async function GET() {
         CAI_IMPLEMENTATION_READY: caiLookup.get(normalize(b.BRAND_NAME)) ?? null,
         PYLON_SENTIMENT: pylon?.sentiment ?? null,
         PYLON_LAST_COMMUNICATION_AT: pylon?.lastActivityAt ?? null,
+        PYLON_OPEN_ISSUES_90D: pylon?.openIssues90d ?? null,
+        PYLON_ACCOUNT_ID: pylon?.accountId ?? null,
         RECURLY_STATE: recurly?.state ?? null,
         RECURLY_PLAN_NAME: recurly?.planName ?? null,
         RECURLY_AMOUNT: recurly?.amount ?? null,

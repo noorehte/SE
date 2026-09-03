@@ -27,19 +27,26 @@ export interface SeSprintEntry {
   myshopifyUrl: string;
 }
 
+import { cached } from "@/lib/server-cache";
+
+// Apps Script web apps are slow (often 1-3s per call) and this was hit fresh
+// on every page load — cached briefly so repeated loads within the window
+// reuse one fetch. See lib/server-cache.ts.
 export async function getSeSprintEntries(): Promise<SeSprintEntry[]> {
   const url = process.env.SE_SPRINT_SHEET_SCRIPT_URL;
   if (!url) return [];
-  try {
-    // The deployed script defaults to its original "cai" behavior
-    // ({ brands: [...] }) unless told otherwise — tab=se_sprint is required
-    // to get { entries: [...] } back.
-    const res = await fetch(`${url}?tab=se_sprint`, { cache: "no-store" });
-    const data = await res.json();
-    return (data.entries ?? []) as SeSprintEntry[];
-  } catch {
-    return [];
-  }
+  return cached("se-sprint-entries", 60, async () => {
+    try {
+      // The deployed script defaults to its original "cai" behavior
+      // ({ brands: [...] }) unless told otherwise — tab=se_sprint is required
+      // to get { entries: [...] } back.
+      const res = await fetch(`${url}?tab=se_sprint`, { cache: "no-store" });
+      const data = await res.json();
+      return (data.entries ?? []) as SeSprintEntry[];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /** Match sheet brand names to Metabase brand names (case-insensitive, ignoring punctuation) */

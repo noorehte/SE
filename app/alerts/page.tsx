@@ -1,4 +1,4 @@
-import { getBrands } from "@/lib/metabase";
+import { getBrands } from "@/lib/get-brands";
 import AlertsPage from "@/components/AlertsPage";
 
 export const dynamic = "force-dynamic";

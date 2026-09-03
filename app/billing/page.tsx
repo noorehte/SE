@@ -1,4 +1,4 @@
-import { getBrands } from "@/lib/metabase";
+import { getBrands } from "@/lib/get-brands";
 import { getRecurlySubscriptionsByBrandName } from "@/lib/recurly";
 import BillingPage from "@/components/BillingPage";
 

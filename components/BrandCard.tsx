@@ -7,7 +7,7 @@ import { ScheduledCall } from "./Dashboard";
 
 const SHARE_COUNTS_COLLAPSED_LIMIT = 3;
 
-const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
+export const BLOCKING_ITEMS: Record<PipelineStatus, string | null> = {
   not_started: "Add products",
   pending_review: "Awaiting board review",
   products_approved_needs_call: "Book onboarding call",
@@ -59,7 +59,7 @@ export function recurlyStateStyle(value: string): { label: string; color: string
 }
 
 const OWNER_INITIALS: Record<string, string> = {
-  maha: "MH", noor: "NR", naumaan: "NM",
+  maha: "MH", noor: "NR", naumaan: "NM", john: "JH",
   mohammad: "MO", kean: "KN", jean: "JN", zeke: "ZK",
 };
 

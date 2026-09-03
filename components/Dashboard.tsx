@@ -62,7 +62,7 @@ const AB_TESTING_COLUMN: { id: KanbanColumnId; label: string; accent: string } =
   id: "ab_testing", label: "A/B Testing", accent: "#e879a8",
 };
 
-const SE_OWNERS = ["maha", "noor", "naumaan", "andres"];
+export const SE_OWNERS = ["maha", "noor", "naumaan", "andres", "john"];
 
 function csvCell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;

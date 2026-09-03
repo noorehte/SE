@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getBrands } from "@/lib/metabase";
+import { getBrands } from "@/lib/get-brands";
 import { scheduleCall } from "@/lib/calendar";
 import { addToWebinarSheet } from "@/lib/webinar-sheet";
 import { isScheduled, markScheduled, getAllScheduled } from "@/lib/scheduled-calls";
