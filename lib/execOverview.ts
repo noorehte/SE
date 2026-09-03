@@ -15,8 +15,10 @@ export interface MonthCount {
   count: number;
 }
 
-// VIP Brands per Month — signup/growth volume, grouped by BRAND_CREATED_AT,
-// deliberately separate from Live Status health scoring (see brief).
+// VIP Brands per Month — signup/growth volume, grouped by CLOSE_DATE (the
+// HubSpot closed-won deal's closedate), deliberately separate from Live
+// Status health scoring (see brief). Brands with no CLOSE_DATE (no
+// closed-won deal yet) are excluded rather than bucketed under "unknown".
 // Returns a continuous run of `monthsBack` calendar months ending this month
 // (gaps filled with count 0) rather than just the last N months that happen
 // to have a signup — with sparse history those can span well over a year,
@@ -25,7 +27,8 @@ export interface MonthCount {
 export function buildSignupsByMonth(brands: Brand[], monthsBack: number): MonthCount[] {
   const counts = new Map<string, number>();
   for (const b of brands) {
-    const key = monthKey(b.BRAND_CREATED_AT);
+    if (!b.CLOSE_DATE) continue;
+    const key = monthKey(b.CLOSE_DATE);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 
