@@ -15,6 +15,18 @@ const SECTION_LABEL_STYLE: React.CSSProperties = {
   letterSpacing: "0.08em",
 };
 
+// One headline percentage tile — big number, label, and an "N of M" detail
+// line underneath. Shared by both headline layouts below.
+function StatTile({ pct, label, detail, color }: { pct: number; label: string; detail: string; color: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div style={{ fontSize: "4rem", fontWeight: 800, lineHeight: 1, color }}>{pct}%</div>
+      <div style={SECTION_LABEL_STYLE}>{label}</div>
+      <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.4)", marginTop: "2px" }}>{detail}</div>
+    </div>
+  );
+}
+
 // Leadership-facing content only — no Sidebar, no BrandDetailPanel, no own
 // brands/selectedBrand state. Embedded as a tab inside Dashboard.tsx (VIP
 // page), which already owns brand state and renders BrandDetailPanel once
@@ -22,9 +34,18 @@ const SECTION_LABEL_STYLE: React.CSSProperties = {
 export default function ExecOverview({
   brands,
   onSelectBrand,
+  perMonthLabel = "Brands per Month",
+  // Analytics (all-segment) view wants the on-track number broken out by
+  // level (L3/L2/L1) instead of collapsed into one "On Track" tile — VIP's
+  // leadership view keeps the original 3-tile layout unless this is passed.
+  detailedLevels = false,
+  showAbTesting = true,
 }: {
   brands: Brand[];
   onSelectBrand: (brand: Brand) => void;
+  perMonthLabel?: string;
+  detailedLevels?: boolean;
+  showAbTesting?: boolean;
 }) {
   const [expandedBucket, setExpandedBucket] = useState<ExecStatus | null>(null);
   const [expandedSentiment, setExpandedSentiment] = useState<Sentiment | null>(null);
@@ -47,6 +68,9 @@ export default function ExecOverview({
   const onTrackPct = eligibleTotal ? Math.round((onTrackCount / eligibleTotal) * 100) : 0;
   const needsAttentionPct = eligibleTotal ? Math.round((statusCounts.needs_attention / eligibleTotal) * 100) : 0;
   const notLivePct = eligibleTotal ? Math.round((statusCounts.not_live / eligibleTotal) * 100) : 0;
+  const l2l3Count = statusCounts.live_2 + statusCounts.live_1;
+  const l2l3Pct = eligibleTotal ? Math.round((l2l3Count / eligibleTotal) * 100) : 0;
+  const l1Pct = eligibleTotal ? Math.round((statusCounts.partial / eligibleTotal) * 100) : 0;
 
   const signupsByMonth = buildSignupsByMonth(brands, 10);
   const maxSignups = Math.max(1, ...signupsByMonth.map((m) => m.count));
@@ -66,27 +90,38 @@ export default function ExecOverview({
   return (
     <div className="flex flex-col gap-10">
       <div className="flex flex-col gap-10" style={{ maxWidth: "1180px" }}>
-        {/* Top row: the 3 headline percentages */}
-        <div className="flex gap-12">
-          <div className="flex flex-col gap-1">
-            <div style={{ fontSize: "4rem", fontWeight: 800, lineHeight: 1, color: "#fff" }}>{onTrackPct}%</div>
-            <div style={SECTION_LABEL_STYLE}>On Track</div>
-            <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.4)", marginTop: "2px" }}>
-              {onTrackCount} of {eligibleTotal}
-              {statusCounts.not_ready > 0 && ` — ${statusCounts.not_ready} not yet ready to start excluded`}
+        {/* Headline percentages — either the original 3-tile row (VIP) or,
+            with detailedLevels on (Analytics), On Track alone followed by
+            its L2/L3, L1, Needs Attention, and Not Live breakdown. */}
+        {detailedLevels ? (
+          <div className="flex flex-col gap-8">
+            <div className="flex gap-12">
+              <StatTile
+                pct={onTrackPct}
+                label="On Track"
+                color="#fff"
+                detail={`${onTrackCount} of ${eligibleTotal}${statusCounts.not_ready > 0 ? ` — ${statusCounts.not_ready} not yet ready to start excluded` : ""}`}
+              />
+            </div>
+            <div className="flex gap-12">
+              <StatTile pct={l2l3Pct} label="Live L2/L3" color={EXEC_STATUS_STYLES.live_1.color} detail={`${l2l3Count} of ${eligibleTotal}`} />
+              <StatTile pct={l1Pct} label="Live L1" color={EXEC_STATUS_STYLES.partial.color} detail={`${statusCounts.partial} of ${eligibleTotal}`} />
+              <StatTile pct={needsAttentionPct} label="Needs Attention" color={EXEC_STATUS_STYLES.needs_attention.color} detail={`${statusCounts.needs_attention} of ${eligibleTotal}`} />
+              <StatTile pct={notLivePct} label="Not Live" color={EXEC_STATUS_STYLES.not_live.color} detail={`${statusCounts.not_live} of ${eligibleTotal}`} />
             </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <div style={{ fontSize: "4rem", fontWeight: 800, lineHeight: 1, color: "#e05c5c" }}>{needsAttentionPct}%</div>
-            <div style={SECTION_LABEL_STYLE}>Needs Attention</div>
-            <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.4)", marginTop: "2px" }}>{statusCounts.needs_attention} of {eligibleTotal}</div>
+        ) : (
+          <div className="flex gap-12">
+            <StatTile
+              pct={onTrackPct}
+              label="On Track"
+              color="#fff"
+              detail={`${onTrackCount} of ${eligibleTotal}${statusCounts.not_ready > 0 ? ` — ${statusCounts.not_ready} not yet ready to start excluded` : ""}`}
+            />
+            <StatTile pct={needsAttentionPct} label="Needs Attention" color="#e05c5c" detail={`${statusCounts.needs_attention} of ${eligibleTotal}`} />
+            <StatTile pct={notLivePct} label="Not Live" color="#5a6b78" detail={`${statusCounts.not_live} of ${eligibleTotal}`} />
           </div>
-          <div className="flex flex-col gap-1">
-            <div style={{ fontSize: "4rem", fontWeight: 800, lineHeight: 1, color: "#5a6b78" }}>{notLivePct}%</div>
-            <div style={SECTION_LABEL_STYLE}>Not Live</div>
-            <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.4)", marginTop: "2px" }}>{statusCounts.not_live} of {eligibleTotal}</div>
-          </div>
-        </div>
+        )}
 
         {/* Second row: Live Status, full width */}
         <div className="flex flex-col gap-4">
@@ -201,7 +236,7 @@ export default function ExecOverview({
         )}
 
         {/* A/B Testing — brands with the AB_TESTING flag on, pulled out of the normal pipeline view */}
-        {abTestingBrands.length > 0 && (
+        {showAbTesting && abTestingBrands.length > 0 && (
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <FlaskConical size={15} style={{ color: "rgba(255,255,255,0.4)" }} />
@@ -245,11 +280,11 @@ export default function ExecOverview({
         )}
       </div>
 
-      {/* VIP Brands per Month — toggle, expands to the full page width (not capped at 1180px like the sections above) */}
+      {/* Brands per Month — toggle, expands to the full page width (not capped at 1180px like the sections above) */}
       {signupsByMonth.length > 0 && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2">
-            <div style={SECTION_LABEL_STYLE}>VIP Brands per Month</div>
+            <div style={SECTION_LABEL_STYLE}>{perMonthLabel}</div>
           </div>
 
           <div>
@@ -262,7 +297,7 @@ export default function ExecOverview({
               }}
             >
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#72a4bf" }} />
-              <span style={{ fontSize: "0.8rem", color: "#72a4bf", fontWeight: 600 }}>VIP Brands per Month</span>
+              <span style={{ fontSize: "0.8rem", color: "#72a4bf", fontWeight: 600 }}>{perMonthLabel}</span>
               {vipPerMonthOpen ? <ChevronUp size={13} style={{ color: "rgba(255,255,255,0.4)" }} /> : <ChevronDown size={13} style={{ color: "rgba(255,255,255,0.4)" }} />}
             </button>
           </div>

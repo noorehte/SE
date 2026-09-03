@@ -25,6 +25,10 @@ export const SEGMENT_STYLES: Record<string, { label: string; color: string }> = 
   mid_market:  { label: "Mid-Market",  color: "#fbbf24" },
 };
 
+// Sentinel for brands with no KIND set at all — a real segment value would
+// never collide with this since KIND comes from a fixed HubSpot dropdown.
+export const NO_SEGMENT = "__no_segment__";
+
 // Pylon account "Sentiment" custom field — an open string in principle (see
 // lib/pylon-sentiment.ts), but these are the values actually in use as of
 // Aug 2026. An unrecognized value still renders, just in a neutral gray.
