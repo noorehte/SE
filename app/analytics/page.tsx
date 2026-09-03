@@ -1,4 +1,4 @@
-import { getBrands } from "@/lib/metabase";
+import { getBrands } from "@/lib/get-brands";
 import { getPylonAccountDataByHubspotId } from "@/lib/pylon-sentiment";
 import AnalyticsView from "@/components/AnalyticsView";
 
