@@ -113,7 +113,8 @@ function exportExecOverviewCsv(brands: Brand[]) {
       csvCell(b.AB_TESTING ? (b.AB_TESTING_NOTES ? `On — ${b.AB_TESTING_NOTES}` : "On") : "Off"),
       csvCell(readyDate ? new Date(readyDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Not yet"),
       csvCell(b.CLOSE_DATE ? new Date(b.CLOSE_DATE).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"),
-      csvCell(b.CALL_SCHEDULED ? "Yes" : "No"),
+      // Only meaningful for Not Ready brands, same as the on-screen checkbox.
+      csvCell(execStatusKey === "not_ready" ? (b.CALL_SCHEDULED ? "Yes" : "No") : ""),
     ];
   });
   const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -1348,11 +1349,15 @@ function ExecOverviewView({
                   {brand.CLOSE_DATE ? new Date(brand.CLOSE_DATE).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"}
                 </td>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={brand.CALL_SCHEDULED}
-                    onChange={(e) => onToggleCallScheduled(brand.BRAND_ID, e.target.checked)}
-                  />
+                  {execStatusKey === "not_ready" ? (
+                    <input
+                      type="checkbox"
+                      checked={brand.CALL_SCHEDULED}
+                      onChange={(e) => onToggleCallScheduled(brand.BRAND_ID, e.target.checked)}
+                    />
+                  ) : (
+                    <span style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.8rem" }}>—</span>
+                  )}
                 </td>
               </tr>
               {isExpanded && (
