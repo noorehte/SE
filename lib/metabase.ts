@@ -208,6 +208,14 @@ export interface Brand {
   // data, since it's tracking something the calendar integration doesn't
   // capture (e.g. a call booked outside the tracked calendars).
   CALL_SCHEDULED: boolean;
+  // Manual override for getExecStatus() (lib/liveStatus.ts) — stored as a
+  // field override, same mechanism as AB_TESTING/CALL_SCHEDULED. Exists for
+  // brands (mostly VIP) with a custom badge implementation that the
+  // WIDGET_STATUSES-based detection can't see, so their computed status
+  // would otherwise be permanently wrong. Raw string here (not ExecStatus)
+  // to avoid a circular import with lib/liveStatus.ts, which imports Brand
+  // from this file — liveStatus.ts validates it before using it.
+  EXEC_STATUS_OVERRIDE: string | null;
 }
 
 // "Stuck" means sitting too long in a status that still needs SE action.
@@ -756,6 +764,7 @@ export async function fetchBrandsFromSources(): Promise<Brand[]> {
       AB_TESTING: f.AB_TESTING === "true",
       AB_TESTING_NOTES: f.AB_TESTING_NOTES ?? null,
       CALL_SCHEDULED: f.CALL_SCHEDULED === "true",
+      EXEC_STATUS_OVERRIDE: f.EXEC_STATUS_OVERRIDE || null,
       PAYMENT_COMPLETED_AT: null,
       CLOSE_DATE: closeDateFor(stg.HUBSPOT_COMPANY_ID),
       HAS_PENDING_BOARD_REVIEW: pendingBoardReview.has(brandId),

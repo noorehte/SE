@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Brand, WIDGET_TYPE_LABELS, WidgetTypeStatus, isBrandStuck } from "@/lib/metabase";
+import { EXEC_STATUS_STYLES, EXEC_STATUS_DISPLAY_ORDER } from "@/lib/liveStatus";
 import { ALL_COLUMNS, ScheduledCall } from "./Dashboard";
 import { sentimentStyle, recurlyStateStyle } from "./BrandCard";
 import { SE_INFO } from "@/lib/se-info";
@@ -19,6 +20,12 @@ const SEGMENT_OPTIONS = ["vip", "strategic", "enterprise", "mid_market"];
 const SEGMENT_LABELS: Record<string, string> = {
   vip: "VIP", strategic: "Strategic", enterprise: "Enterprise", mid_market: "Mid-Market",
 };
+// Same source EXEC_STATUS_STYLES/getExecStatus use, so this dropdown's
+// options/labels can't drift out of sync with what the status actually means.
+const EXEC_STATUS_OVERRIDE_OPTIONS = EXEC_STATUS_DISPLAY_ORDER;
+const EXEC_STATUS_OVERRIDE_LABELS: Record<string, string> = Object.fromEntries(
+  EXEC_STATUS_DISPLAY_ORDER.map((key) => [key, EXEC_STATUS_STYLES[key].label])
+);
 // The 5 widget types we track go-live status for, in display order:
 // CAI, Analysis, Testimonials, Banner, Embedded.
 const TRACKED_WIDGET_TYPES = ["gpt", "analysis", "qual", "sticker", "quant"];
@@ -539,6 +546,12 @@ export default function BrandDetailPanel({ brand, scheduledCall, onClose, onBran
               value={brand.KIND} options={SEGMENT_OPTIONS} optionLabels={SEGMENT_LABELS}
               hubspotCompanyId={brand.HUBSPOT_COMPANY_ID}
               onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { KIND: v })}
+            />
+            <EditableSelect
+              brandId={brand.BRAND_ID} field="EXEC_STATUS_OVERRIDE" label="Live Status Override"
+              value={brand.EXEC_STATUS_OVERRIDE} options={EXEC_STATUS_OVERRIDE_OPTIONS} optionLabels={EXEC_STATUS_OVERRIDE_LABELS}
+              hubspotCompanyId={brand.HUBSPOT_COMPANY_ID}
+              onSaved={(f, v) => onBrandUpdate?.(brand.BRAND_ID, { EXEC_STATUS_OVERRIDE: v || null })}
             />
             <Row label="Days in status" value={<span style={{ color: isStuck ? "#e05c5c" : "#fff" }}>{brand.DAYS_IN_STATUS}d</span>} />
             <Row label="Created" value={new Date(brand.BRAND_CREATED_AT).toLocaleDateString()} />
