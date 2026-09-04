@@ -17,9 +17,15 @@ export default function AnalyticsView({ initialBrands }: { initialBrands: Brand[
   const [sentimentFilter, setSentimentFilter] = useState<string[]>([]);
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
 
+  // Same convention as Dashboard.tsx's segmentFiltered — churned brands
+  // aren't part of "how's the live book doing" and would otherwise skew the
+  // level percentages (e.g. a churned brand that regressed from live would
+  // still count as "Needs Attention").
+  const active = brands.filter((b) => b.PIPELINE_STATUS !== "churned");
+
   const segmentMatched = segmentFilter.length === 0
-    ? brands
-    : brands.filter((b) => segmentFilter.includes(b.KIND?.toLowerCase() || NO_SEGMENT));
+    ? active
+    : active.filter((b) => segmentFilter.includes(b.KIND?.toLowerCase() || NO_SEGMENT));
 
   const filtered = sentimentFilter.length === 0
     ? segmentMatched
@@ -33,7 +39,7 @@ export default function AnalyticsView({ initialBrands }: { initialBrands: Brand[
           <div>
             <h1 style={{ fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "2rem", fontWeight: 700, color: "#fff" }}>Analytics</h1>
             <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>
-              Live status levels across all segments — {filtered.length} of {brands.length} shown
+              Live status levels across all segments — {filtered.length} of {active.length} shown
             </p>
           </div>
           <div className="flex items-center gap-3">
