@@ -397,6 +397,30 @@ export default function Dashboard({
     }
   }
 
+  // Manual live-status override, editable inline from the SE Overview row's
+  // expanded detail (same field BrandDetailPanel's "Live Status Override"
+  // dropdown writes to) — for brands (mostly VIP) with a custom badge
+  // implementation getExecStatus() can't see. newValue "" clears it back to
+  // auto-computed.
+  async function setExecStatusOverride(brandId: number, newValue: string) {
+    const brand = brands.find((b) => b.BRAND_ID === brandId);
+    if (!brand) return;
+    const prevValue = brand.EXEC_STATUS_OVERRIDE;
+    setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, EXEC_STATUS_OVERRIDE: newValue || null } : b)));
+    try {
+      const res = await fetch("/api/field-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, field: "EXEC_STATUS_OVERRIDE", value: newValue }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!data.ok) throw new Error(data.errors?.join("; ") ?? `Save failed (${res.status})`);
+    } catch (e) {
+      setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, EXEC_STATUS_OVERRIDE: prevValue } : b)));
+      alert(`Couldn't save Live Status Override: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   // Manual "add to SE Sprint" toggle — stored as a Notion field override
   // (ON_SE_SPRINT_SHEET) alongside the form-synced value (see app/page.tsx),
   // so it's additive: turning this on never gets clobbered by a later sheet
@@ -637,7 +661,7 @@ export default function Dashboard({
           ) : view === "leadership" ? (
             <ExecOverview brands={segmentFiltered} onSelectBrand={setSelectedBrand} perMonthLabel="VIP Brands per Month" />
           ) : (
-            <ExecOverviewView brands={segmentFiltered} onRowClick={setSelectedBrand} onToggleAbTesting={toggleAbTesting} onToggleCallScheduled={toggleCallScheduled} />
+            <ExecOverviewView brands={segmentFiltered} onRowClick={setSelectedBrand} onToggleAbTesting={toggleAbTesting} onToggleCallScheduled={toggleCallScheduled} onSetExecStatusOverride={setExecStatusOverride} />
           )}
         </div>
 
@@ -1156,12 +1180,13 @@ function compareNullableDates(a: string | null, b: string | null): number {
 // go live, are they A/B testing, and has a call been scheduled — one row per
 // brand rather than three separate widget boards to cross-reference.
 function ExecOverviewView({
-  brands, onRowClick, onToggleAbTesting, onToggleCallScheduled,
+  brands, onRowClick, onToggleAbTesting, onToggleCallScheduled, onSetExecStatusOverride,
 }: {
   brands: Brand[];
   onRowClick: (brand: Brand) => void;
   onToggleAbTesting: (brandId: number, newValue: boolean) => void;
   onToggleCallScheduled: (brandId: number, newValue: boolean) => void;
+  onSetExecStatusOverride: (brandId: number, newValue: string) => void;
 }) {
   // Defaults to Status descending (Live L3 first, Not Live last) — any
   // column can still be sorted, same pattern as the Kanban's per-column
@@ -1388,6 +1413,22 @@ function ExecOverviewView({
                         <div>
                           <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase" }}>Segment</div>
                           <div style={{ fontSize: "0.85rem", color: "#fff" }}>{brand.KIND ?? "—"}</div>
+                        </div>
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase" }}>Live Status Override</div>
+                          <select
+                            value={brand.EXEC_STATUS_OVERRIDE ?? ""}
+                            onChange={(e) => onSetExecStatusOverride(brand.BRAND_ID, e.target.value)}
+                            style={{
+                              background: "#0d1e2d", color: "#fff", border: "1px solid rgba(114,164,191,0.4)",
+                              borderRadius: "6px", padding: "2px 6px", fontSize: "0.85rem",
+                            }}
+                          >
+                            <option value="">Auto (computed)</option>
+                            {EXEC_STATUS_DISPLAY_ORDER.map((key) => (
+                              <option key={key} value={key}>{EXEC_STATUS_STYLES[key].label}</option>
+                            ))}
+                          </select>
                         </div>
                         <div>
                           <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase" }}>Ready Date</div>
