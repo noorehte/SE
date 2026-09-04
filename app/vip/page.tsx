@@ -78,6 +78,7 @@ function mockVipBrands(): Brand[] {
     AB_TESTING: false,
     AB_TESTING_NOTES: null,
     CALL_SCHEDULED: false,
+    EXEC_STATUS_OVERRIDE: null,
     PYLON_SENTIMENT: null,
     PYLON_OPEN_ISSUES_90D: null,
     PYLON_ACCOUNT_ID: null,

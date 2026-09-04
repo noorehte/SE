@@ -2,7 +2,7 @@
 
 import { useState, useRef, Fragment } from "react";
 import { Brand, PipelineStatus, WIDGET_TYPE_LABELS, isBrandStuck } from "@/lib/metabase";
-import { BadgeStatus, ExecStatus, getBadgeStatus, getExecStatus, getExecStatusDetail, getRegressedParts, getReadyDate, EXEC_STATUS_ORDER, EXEC_STATUS_STYLES, EXEC_STATUS_DISPLAY_ORDER } from "@/lib/liveStatus";
+import { BadgeStatus, ExecStatus, getBadgeStatus, getExecStatus, getExecStatusDetail, getRegressedParts, getReadyDate, isExecStatus, EXEC_STATUS_ORDER, EXEC_STATUS_STYLES, EXEC_STATUS_DISPLAY_ORDER } from "@/lib/liveStatus";
 import BrandCard, { SEGMENT_STYLES, AbTestingToggle, SENTIMENT_STYLES, NO_SEGMENT } from "./BrandCard";
 import BrandDetailPanel from "./BrandDetailPanel";
 import ExecOverview from "./ExecOverview";
@@ -1319,6 +1319,11 @@ function ExecOverviewView({
                 onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.background = ""; }}>
                 <td className="px-4 py-3" style={{ color: "#fff", fontFamily: "Librebaskerville, Arial, sans-serif", fontSize: "0.9rem", fontWeight: 600 }}>
                   {brand.BRAND_NAME}
+                  {isExecStatus(brand.EXEC_STATUS_OVERRIDE) && (
+                    <span style={{ color: "rgba(255,255,255,0.35)", fontFamily: "inherit", fontWeight: 400, fontSize: "0.75rem" }} title="Live status manually set — see Live Status Override in the detail panel">
+                      {" "}(Custom Badge)
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   {execStatusKey === "not_ready" ? (

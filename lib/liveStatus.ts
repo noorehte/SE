@@ -54,7 +54,15 @@ export type ExecStatus = "live_2" | "live_1" | "needs_attention" | "partial" | "
 // cover a brand that has NEVER gone live at all but has been sitting that
 // way for a long time (stale Not Live / Partial), not just brands that
 // regressed from live. Needs a staleness threshold, deliberately deferred.
+// Validates Brand.EXEC_STATUS_OVERRIDE (a raw string, so it can be set to
+// anything) against the real set of statuses before trusting it.
+export function isExecStatus(value: string | null): value is ExecStatus {
+  return value != null && value in EXEC_STATUS_STYLES;
+}
+
 export function getExecStatus(brand: Brand): ExecStatus {
+  if (isExecStatus(brand.EXEC_STATUS_OVERRIDE)) return brand.EXEC_STATUS_OVERRIDE;
+
   const badgeStatus = getBadgeStatus(brand, ["quant", "sticker"], brand.BADGE_READY_DATE);
   const reviewsStatus = getBadgeStatus(brand, ["qual"], brand.REVIEWS_READY_DATE);
   const caiStatus = getBadgeStatus(brand, ["gpt", "analysis", "gpt_s"], brand.CAI_READY_DATE);
@@ -78,6 +86,11 @@ export function getExecStatus(brand: Brand): ExecStatus {
 // useful for "Partial," which alone doesn't say whether badge, reviews, or
 // CAI is driving it, or whether something's still ramping up vs. regressed.
 export function getExecStatusDetail(brand: Brand): string {
+  // Computed badge/reviews/CAI signals aren't meaningful once the status
+  // itself is manually overridden — they're exactly what the override
+  // exists to work around (e.g. a custom badge implementation).
+  if (isExecStatus(brand.EXEC_STATUS_OVERRIDE)) return "Manually set — custom badge";
+
   const badgeStatus = getBadgeStatus(brand, ["quant", "sticker"], brand.BADGE_READY_DATE);
   const reviewsStatus = getBadgeStatus(brand, ["qual"], brand.REVIEWS_READY_DATE);
   const caiStatus = getBadgeStatus(brand, ["gpt", "analysis", "gpt_s"], brand.CAI_READY_DATE);
