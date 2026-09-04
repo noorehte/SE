@@ -96,23 +96,15 @@ function exportBrandsCsv(brands: Brand[], columns: { id: PipelineStatus; label: 
 }
 
 // Mirrors the columns shown in ExecOverviewView exactly (Brand, Status,
-// A/B Testing, Ready Date, Close Date, Last Call) — those helpers
+// A/B Testing, Ready Date, Close Date, Call Scheduled) — those helpers
 // (EXEC_STATUS_STYLES, getExecStatus, etc.) are defined further down this
 // file but that's fine, this only runs on click, well after module init.
-function exportExecOverviewCsv(brands: Brand[], scheduledCalls: Record<string, ScheduledCall>) {
-  const header = ["Brand", "Status", "A/B Testing", "Ready Date", "Close Date", "Last Call"];
+function exportExecOverviewCsv(brands: Brand[]) {
+  const header = ["Brand", "Status", "A/B Testing", "Ready Date", "Close Date", "Call Scheduled"];
   const rows = brands.map((b) => {
     const execStatusKey = getExecStatus(b);
     const execStatus = EXEC_STATUS_STYLES[execStatusKey];
     const readyDate = getReadyDate(b);
-    const sc = scheduledCalls[String(b.BRAND_ID)];
-    const lastCallLabel = !sc
-      ? "None scheduled"
-      : sc.action === "webinar_sheet"
-        ? "On webinar list"
-        : sc.callDate
-          ? new Date(sc.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
-          : "Scheduled";
     return [
       csvCell(b.BRAND_NAME),
       // Blank for "not ready" brands, same as the on-screen dash — nothing
@@ -121,7 +113,7 @@ function exportExecOverviewCsv(brands: Brand[], scheduledCalls: Record<string, S
       csvCell(b.AB_TESTING ? (b.AB_TESTING_NOTES ? `On — ${b.AB_TESTING_NOTES}` : "On") : "Off"),
       csvCell(readyDate ? new Date(readyDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Not yet"),
       csvCell(b.CLOSE_DATE ? new Date(b.CLOSE_DATE).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"),
-      csvCell(lastCallLabel),
+      csvCell(b.CALL_SCHEDULED ? "Yes" : "No"),
     ];
   });
   const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -383,6 +375,27 @@ export default function Dashboard({
     }
   }
 
+  // Manual "Call Scheduled" checkbox on the SE Overview table — independent
+  // of the real scheduledCalls data (which only tracks the calendars this
+  // app integrates with), same field-override mechanism as AB_TESTING.
+  async function toggleCallScheduled(brandId: number, newValue: boolean) {
+    const brand = brands.find((b) => b.BRAND_ID === brandId);
+    if (!brand) return;
+    setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, CALL_SCHEDULED: newValue } : b)));
+    try {
+      const res = await fetch("/api/field-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, field: "CALL_SCHEDULED", value: newValue ? "true" : "" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!data.ok) throw new Error(data.errors?.join("; ") ?? `Save failed (${res.status})`);
+    } catch (e) {
+      setBrands((prev) => prev.map((b) => (b.BRAND_ID === brandId ? { ...b, CALL_SCHEDULED: brand.CALL_SCHEDULED } : b)));
+      alert(`Couldn't save Call Scheduled checkbox: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   // Manual "add to SE Sprint" toggle — stored as a Notion field override
   // (ON_SE_SPRINT_SHEET) alongside the form-synced value (see app/page.tsx),
   // so it's additive: turning this on never gets clobbered by a later sheet
@@ -623,7 +636,7 @@ export default function Dashboard({
           ) : view === "leadership" ? (
             <ExecOverview brands={segmentFiltered} onSelectBrand={setSelectedBrand} perMonthLabel="VIP Brands per Month" />
           ) : (
-            <ExecOverviewView brands={segmentFiltered} scheduledCalls={scheduledCalls} onRowClick={setSelectedBrand} onToggleAbTesting={toggleAbTesting} />
+            <ExecOverviewView brands={segmentFiltered} onRowClick={setSelectedBrand} onToggleAbTesting={toggleAbTesting} onToggleCallScheduled={toggleCallScheduled} />
           )}
         </div>
 
@@ -1127,7 +1140,7 @@ function getPdpDetail(pdp: { badgeLive: boolean; reviewsLive: boolean; caiLive: 
   return "Not live yet";
 }
 
-type ExecSortKey = "brand" | "status" | "ready" | "closeDate" | "lastCall";
+type ExecSortKey = "brand" | "status" | "ready" | "closeDate";
 
 // Nulls (nothing scheduled / not yet ready) always sort to the end, regardless
 // of direction — an empty date isn't meaningfully "earliest."
@@ -1139,15 +1152,15 @@ function compareNullableDates(a: string | null, b: string | null): number {
 }
 
 // Read-only, high-level snapshot for leadership: is each VIP brand ready to
-// go live, are they A/B testing, and when did we last have a call — one row
-// per brand rather than three separate widget boards to cross-reference.
+// go live, are they A/B testing, and has a call been scheduled — one row per
+// brand rather than three separate widget boards to cross-reference.
 function ExecOverviewView({
-  brands, scheduledCalls, onRowClick, onToggleAbTesting,
+  brands, onRowClick, onToggleAbTesting, onToggleCallScheduled,
 }: {
   brands: Brand[];
-  scheduledCalls: Record<string, ScheduledCall>;
   onRowClick: (brand: Brand) => void;
   onToggleAbTesting: (brandId: number, newValue: boolean) => void;
+  onToggleCallScheduled: (brandId: number, newValue: boolean) => void;
 }) {
   // Defaults to Status descending (Live L3 first, Not Live last) — any
   // column can still be sorted, same pattern as the Kanban's per-column
@@ -1197,7 +1210,6 @@ function ExecOverviewView({
       }
       case "ready": return compareNullableDates(getReadyDate(a), getReadyDate(b));
       case "closeDate": return compareNullableDates(a.CLOSE_DATE, b.CLOSE_DATE);
-      case "lastCall": return compareNullableDates(scheduledCalls[String(a.BRAND_ID)]?.callDate ?? null, scheduledCalls[String(b.BRAND_ID)]?.callDate ?? null);
     }
   };
   const sorted = [...filtered].sort((a, b) => (sortDir === "asc" ? 1 : -1) * compare(a, b));
@@ -1218,7 +1230,7 @@ function ExecOverviewView({
       <div className="flex items-center justify-between mb-3">
         <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.4)" }}>{sorted.length} brands</div>
         <button
-          onClick={() => exportExecOverviewCsv(sorted, scheduledCalls)}
+          onClick={() => exportExecOverviewCsv(sorted)}
           title="Export the exec overview rows currently shown to CSV"
           className="text-sm px-3 py-2 rounded-lg flex items-center gap-1.5"
           style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.12)" }}>
@@ -1267,7 +1279,7 @@ function ExecOverviewView({
             <th className="text-left px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>A/B Testing</th>
             <Th label="Ready Date" sortKeyValue="ready" />
             <Th label="Close Date" sortKeyValue="closeDate" />
-            <Th label="Last Call" sortKeyValue="lastCall" />
+            <th className="text-left px-4 py-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Call Scheduled</th>
           </tr>
         </thead>
         <tbody>
@@ -1275,14 +1287,6 @@ function ExecOverviewView({
             const execStatusKey = getExecStatus(brand);
             const execStatus = EXEC_STATUS_STYLES[execStatusKey];
             const readyDate = getReadyDate(brand);
-            const sc = scheduledCalls[String(brand.BRAND_ID)];
-            const lastCallLabel = !sc
-              ? "None scheduled"
-              : sc.action === "webinar_sheet"
-                ? "On webinar list"
-                : sc.callDate
-                  ? new Date(sc.callDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
-                  : "Scheduled";
 
             const isExpanded = expandedId === brand.BRAND_ID;
             const regressedParts = execStatusKey === "needs_attention" ? getRegressedParts(brand) : [];
@@ -1343,8 +1347,12 @@ function ExecOverviewView({
                 <td className="px-4 py-3" style={{ color: brand.CLOSE_DATE ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.25)", fontSize: "0.85rem" }}>
                   {brand.CLOSE_DATE ? new Date(brand.CLOSE_DATE).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"}
                 </td>
-                <td className="px-4 py-3" style={{ color: sc ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.25)", fontSize: "0.85rem" }}>
-                  {lastCallLabel}
+                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={brand.CALL_SCHEDULED}
+                    onChange={(e) => onToggleCallScheduled(brand.BRAND_ID, e.target.checked)}
+                  />
                 </td>
               </tr>
               {isExpanded && (

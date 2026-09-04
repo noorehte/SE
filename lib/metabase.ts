@@ -203,6 +203,11 @@ export interface Brand {
   // losing that real status, so it lands back in the right column once removed.
   AB_TESTING: boolean;
   AB_TESTING_NOTES: string | null;
+  // SE-tracker control (stored as a field override, same mechanism as
+  // AB_TESTING) — manually marked, independent of any real scheduled-call
+  // data, since it's tracking something the calendar integration doesn't
+  // capture (e.g. a call booked outside the tracked calendars).
+  CALL_SCHEDULED: boolean;
 }
 
 // "Stuck" means sitting too long in a status that still needs SE action.
@@ -750,6 +755,7 @@ export async function fetchBrandsFromSources(): Promise<Brand[]> {
       KIND: f.KIND ?? stg.KIND ?? null,
       AB_TESTING: f.AB_TESTING === "true",
       AB_TESTING_NOTES: f.AB_TESTING_NOTES ?? null,
+      CALL_SCHEDULED: f.CALL_SCHEDULED === "true",
       PAYMENT_COMPLETED_AT: null,
       CLOSE_DATE: closeDateFor(stg.HUBSPOT_COMPANY_ID),
       HAS_PENDING_BOARD_REVIEW: pendingBoardReview.has(brandId),
